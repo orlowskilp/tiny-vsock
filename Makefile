@@ -5,6 +5,11 @@ VERSION = $(shell cat ./Cargo.toml | grep ^version | awk -F ' = ' '{ print $$2 }
 build:
 	cargo build --release
 
+# Build the binary
+.PHONY: all
+all:
+	cargo build --all-features --release
+
 # Build documentation for the library
 .PHONY: doc
 doc:
@@ -14,7 +19,7 @@ doc:
 # Run all tests (no coverage)
 .PHONY: test
 test:
-	cargo test --workspace
+	cargo test --all-features
 
 # Clean up
 .PHONY: clean

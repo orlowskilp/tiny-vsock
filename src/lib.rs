@@ -3,8 +3,9 @@ use nix::{
     Error as NixError,
     sys::socket::{self, AddressFamily, Backlog, MsgFlags, SockFlag, SockType, VsockAddr},
 };
+#[cfg(feature = "std-io")]
+use std::io::{Error as IoError, Read, Result as IoResult, Write};
 use std::{
-    io::{Error as IoError, Read, Result as IoResult, Write},
     os::{
         fd::{AsFd, BorrowedFd, FromRawFd, OwnedFd},
         unix::io::{AsRawFd, RawFd},
@@ -74,26 +75,43 @@ impl Vsock {
     ///
     /// # Returns
     ///
-    /// A `Vsock` instance representing the connected socket or an error if the connection fails after
-    /// multiple attempts. The method implements an exponential backoff strategy for retrying failed
+    /// A `Vsock` instance representing the connected socket or an error if the connection
+    /// fails after 5 attempts. The method implements an exponential backoff strategy for retrying failed
     /// connection attempts.
     pub fn connect(cid: u32, port: u32) -> Result<Self> {
-        for i in 1..=Self::CONNECT_ATTEMPTS {
+        Self::connect_with_max_attempts(cid, port, Self::CONNECT_ATTEMPTS)
+    }
+
+    /// Connect to a Vsock socket with a given CID and port and return a vsock handle.
+    ///
+    /// # Arguments
+    ///
+    /// * `cid` - CID address to connect to.
+    /// * `port` - Port to connect to.
+    /// * `max_attempts` - Maximum number of attempts to connect before giving up.
+    ///
+    /// # Returns
+    ///
+    /// A `Vsock` instance representing the connected socket or an error if the connection
+    /// fails after the specified number of attempts. The method implements an exponential
+    /// backoff strategy for retrying failed connection attempts.
+    pub fn connect_with_max_attempts(cid: u32, port: u32, max_attempts: usize) -> Result<Self> {
+        for i in 0..max_attempts {
             let vsock = Self::new(Self::socket()?);
             match socket::connect(vsock.as_raw_fd(), &VsockAddr::new(cid, port)) {
                 Ok(_) => return Ok(vsock),
                 Err(err) => {
-                    tracing::warn!("Vsock: Connect attempt {i} failed: {err:?}, retrying...")
+                    tracing::warn!(
+                        "Vsock: Connect attempt {} failed: {err:?}, retrying...",
+                        i + 1
+                    )
                 }
             }
             // Exponentially backoff before retrying to connect to the socket
             sleep(Duration::from_secs(1 << i));
         }
 
-        tracing::error!(
-            "Vsock: Connect failed after {} attempts",
-            Self::CONNECT_ATTEMPTS
-        );
+        tracing::error!("Vsock: Connect failed after {} attempts", max_attempts);
         Err(anyhow!("Vsock: Connect failed"))
     }
 
@@ -242,14 +260,14 @@ impl Vsock {
     }
 }
 
+#[cfg(feature = "std-io")]
 impl Write for Vsock {
     /// Write a slice of bytes to the Vsock socket. The method assumes that the entire buffer can be sent
     /// in one call for optimal performance. For larger buffers, the `send` method with chunking should
     /// be used instead.
     fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        let x = socket::send(self.as_raw_fd(), buf, MsgFlags::empty());
         loop {
-            match x {
+            match socket::send(self.as_raw_fd(), buf, MsgFlags::empty()) {
                 Ok(data_len) => {
                     tracing::trace!("Vsock: Bytes sent: {data_len}");
                     break Ok(data_len);
@@ -267,22 +285,24 @@ impl Write for Vsock {
         }
     }
 
-    /// Flush is a no-op for Vsock since it is a stream-oriented socket and does not have an internal buffer
-    /// that needs to be flushed.
+    /// Flush the Vsock socket. Since vsock is a stream-oriented socket, flush typically ensures
+    /// all data is sent. We shutdown the write side to signal EOF, allowing read_to_end() to work properly.
     fn flush(&mut self) -> IoResult<()> {
-        tracing::warn!("Vsock: Flush is a no-op for Vsock");
-        Ok(())
+        socket::shutdown(self.as_raw_fd(), socket::Shutdown::Write).map_err(|err| {
+            tracing::error!("Vsock: Shutdown write failed: {err:?}");
+            IoError::other(err)
+        })
     }
 }
 
+#[cfg(feature = "std-io")]
 impl Read for Vsock {
     /// Read bytes from the Vsock socket into a provided buffer. The method assumes that the buffer is large
     /// enough to hold the incoming data for optimal performance. For larger buffers, the `receive` method
     /// with chunking and data size cap should be used instead.
     fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
-        let x = socket::recv(self.as_raw_fd(), buf, MsgFlags::empty());
         loop {
-            match x {
+            match socket::recv(self.as_raw_fd(), buf, MsgFlags::empty()) {
                 Ok(data_len) => {
                     tracing::trace!("Vsock: Bytes received: {data_len}");
                     break Ok(data_len);
