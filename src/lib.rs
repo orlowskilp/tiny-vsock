@@ -1,9 +1,10 @@
 use anyhow::{Result, anyhow};
 use nix::{
-    Error,
+    Error as NixError,
     sys::socket::{self, AddressFamily, Backlog, MsgFlags, SockFlag, SockType, VsockAddr},
 };
 use std::{
+    io::{Error as IoError, Read, Result as IoResult, Write},
     os::{
         fd::{AsFd, BorrowedFd, FromRawFd, OwnedFd},
         unix::io::{AsRawFd, RawFd},
@@ -165,7 +166,7 @@ impl Vsock {
                     data_len
                 }
                 // Interrupt signal: non-critical retry
-                Err(Error::EINTR) => {
+                Err(NixError::EINTR) => {
                     tracing::warn!("Vsock: Send interrupted by EINTR, retrying...");
                     0
                 }
@@ -219,7 +220,7 @@ impl Vsock {
                     data_len
                 }
                 // Interrupt signal: non-critical retry
-                Err(Error::EINTR) => {
+                Err(NixError::EINTR) => {
                     tracing::warn!("Vsock: Recv interrupted by EINTR, retrying...");
                     0
                 }
@@ -236,6 +237,65 @@ impl Vsock {
             if position >= max_data_size {
                 tracing::error!("Vsock: Recv buffer full");
                 break Err(anyhow!("Vsock: Recv buffer full"));
+            }
+        }
+    }
+}
+
+impl Write for Vsock {
+    /// Write a slice of bytes to the Vsock socket. The method assumes that the entire buffer can be sent
+    /// in one call for optimal performance. For larger buffers, the `send` method with chunking should
+    /// be used instead.
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        let x = socket::send(self.as_raw_fd(), buf, MsgFlags::empty());
+        loop {
+            match x {
+                Ok(data_len) => {
+                    tracing::trace!("Vsock: Bytes sent: {data_len}");
+                    break Ok(data_len);
+                }
+                // Interrupt signal: non-critical retry
+                Err(NixError::EINTR) => {
+                    tracing::warn!("Vsock: Send interrupted by EINTR, retrying...");
+                    continue;
+                }
+                Err(errno) => {
+                    tracing::error!("Vsock: Send failed: {errno:?}");
+                    break Err(IoError::other(errno));
+                }
+            }
+        }
+    }
+
+    /// Flush is a no-op for Vsock since it is a stream-oriented socket and does not have an internal buffer
+    /// that needs to be flushed.
+    fn flush(&mut self) -> IoResult<()> {
+        tracing::warn!("Vsock: Flush is a no-op for Vsock");
+        Ok(())
+    }
+}
+
+impl Read for Vsock {
+    /// Read bytes from the Vsock socket into a provided buffer. The method assumes that the buffer is large
+    /// enough to hold the incoming data for optimal performance. For larger buffers, the `receive` method
+    /// with chunking and data size cap should be used instead.
+    fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
+        let x = socket::recv(self.as_raw_fd(), buf, MsgFlags::empty());
+        loop {
+            match x {
+                Ok(data_len) => {
+                    tracing::trace!("Vsock: Bytes received: {data_len}");
+                    break Ok(data_len);
+                }
+                // Interrupt signal: non-critical retry
+                Err(NixError::EINTR) => {
+                    tracing::warn!("Vsock: Recv interrupted by EINTR, retrying...");
+                    continue;
+                }
+                Err(errno) => {
+                    tracing::error!("Vsock: Recv failed: {errno:?}");
+                    break Err(IoError::other(errno));
+                }
             }
         }
     }
