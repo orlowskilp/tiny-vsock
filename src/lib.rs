@@ -1,14 +1,242 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use anyhow::{Result, anyhow};
+use nix::{
+    Error,
+    sys::socket::{self, AddressFamily, Backlog, MsgFlags, SockFlag, SockType, VsockAddr},
+};
+use std::{
+    os::{
+        fd::{AsFd, BorrowedFd, FromRawFd, OwnedFd},
+        unix::io::{AsRawFd, RawFd},
+    },
+    thread::sleep,
+    time::Duration,
+};
+
+/// Abstraction over a vsock (`AF_VSOCK`) socket for communication between hosts and virtual machines
+/// or enclaves.
+pub struct Vsock {
+    /// Vsock socket file descriptor.
+    socket_fd: OwnedFd,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+impl AsRawFd for Vsock {
+    /// Return the raw file descriptor of the Vsock socket.
+    fn as_raw_fd(&self) -> RawFd {
+        self.socket_fd.as_raw_fd()
+    }
+}
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+impl AsFd for Vsock {
+    /// Return the `BorrowedFd` of the Vsock socket.
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.socket_fd.as_fd()
+    }
+}
+
+impl Vsock {
+    /// Maximum number of attempts to connect to a Vsock socket before giving up.
+    const CONNECT_ATTEMPTS: usize = 5;
+    /// CID address to bind to for accepting connections from any CID. This is a convention
+    /// in vsock
+    pub const ANY_CID_ADDR: u32 = u32::MAX;
+    /// CID address used for communication with the Nitro Enclave parent instance. This is a
+    /// convention in AWS Nitro Enclaves and is not meant to be used for general vsock
+    /// communication outside of Nitro Enclaves.
+    pub const ANY_PARENT_NE_CID_ADDR: u32 = 3;
+
+    /// Idiomatic method to create a new Vsock instance from a given socket file descriptor. Not meant
+    /// for public use.
+    fn new(socket_fd: OwnedFd) -> Self {
+        Vsock { socket_fd }
+    }
+
+    /// Shorthand method to create a new Vsock socket. Not meant for public use.
+    fn socket() -> Result<OwnedFd> {
+        socket::socket(
+            AddressFamily::Vsock,
+            SockType::Stream,
+            SockFlag::empty(),
+            None,
+        )
+        .map_err(|err| {
+            tracing::error!("Vsock: Create socket failed: {:?}", err);
+            anyhow!(err)
+        })
+    }
+
+    /// Connect to a Vsock socket with a given CID and port and return a vsock handle.
+    ///
+    /// # Arguments
+    ///
+    /// * `cid` - CID address to connect to.
+    /// * `port` - Port to connect to.
+    ///
+    /// # Returns
+    ///
+    /// A `Vsock` instance representing the connected socket or an error if the connection fails after
+    /// multiple attempts. The method implements an exponential backoff strategy for retrying failed
+    /// connection attempts.
+    pub fn connect(cid: u32, port: u32) -> Result<Self> {
+        for i in 1..=Self::CONNECT_ATTEMPTS {
+            let vsock = Self::new(Self::socket()?);
+            match socket::connect(vsock.as_raw_fd(), &VsockAddr::new(cid, port)) {
+                Ok(_) => return Ok(vsock),
+                Err(err) => {
+                    tracing::warn!("Vsock: Connect attempt {i} failed: {err:?}, retrying...")
+                }
+            }
+            // Exponentially backoff before retrying to connect to the socket
+            sleep(Duration::from_secs(1 << i));
+        }
+
+        tracing::error!(
+            "Vsock: Connect failed after {} attempts",
+            Self::CONNECT_ATTEMPTS
+        );
+        Err(anyhow!("Vsock: Connect failed"))
+    }
+
+    /// Bind to a Vsock socket with a given port and return a vsock handle.
+    ///
+    /// # Arguments
+    ///
+    /// * `port` - Port to bind to.
+    ///
+    /// # Returns
+    ///
+    /// A `Vsock` instance representing the bound socket or an error if the bind operation.
+    pub fn bind(port: u32) -> Result<Self> {
+        let socket_fd = Vsock::socket()?;
+        let sock_addr = VsockAddr::new(Self::ANY_CID_ADDR, port);
+        socket::bind(socket_fd.as_raw_fd(), &sock_addr)
+            .map_err(|err| {
+                tracing::error!("Vsock: Bind failed: {:?}", err);
+                anyhow!(err)
+            })
+            .map(|_| {
+                tracing::debug!("Vsock: Bound to port {}", port);
+                Self::new(socket_fd)
+            })
+    }
+
+    /// Listen for incoming connections on a Vsock socket.
+    pub fn listen(&self) -> Result<()> {
+        const MAX_QUEUE_LEN: i32 = 128;
+        socket::listen(&self.as_fd(), Backlog::new(MAX_QUEUE_LEN)?).map_err(|err| {
+            tracing::error!("Vsock: Listen failed: {:?}", err);
+            anyhow!(err)
+        })
+    }
+
+    /// Accept an incoming connection on a Vsock socket and return a new Vsock instance
+    /// representing the accepted connection.
+    pub fn accept(&self) -> Result<Self> {
+        socket::accept(self.as_raw_fd())
+            .map_err(|err| {
+                tracing::error!("Vsock: Accept failed: {:?}", err);
+                anyhow!(err)
+            })
+            .map(|raw_fd| {
+                // Safety: We own the raw fd returned by accept
+                unsafe { Self::new(OwnedFd::from_raw_fd(raw_fd)) }
+            })
+    }
+
+    /// Send a slice of bytes through a Vsock socket. The method makes assumptions about the
+    /// transport chunk size to optimize performance.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - Slice of bytes to be sent through the Vsock socket entirely.
+    /// * `chunk_size` - Size of each chunk to send through the socket.
+    ///
+    /// # Returns
+    ///
+    /// Empty result indicating success or error if the operation fails.
+    pub fn send(&self, data: &[u8], chunk_size: usize) -> Result<()> {
+        let mut position = 0;
+        loop {
+            let left = position;
+            let right = left + chunk_size.min(data.len() - left);
+            position += match socket::send(self.as_raw_fd(), &data[left..right], MsgFlags::empty())
+            {
+                Ok(data_len) => {
+                    tracing::trace!("Vsock: Bytes sent: {data_len}");
+                    data_len
+                }
+                // Interrupt signal: non-critical retry
+                Err(Error::EINTR) => {
+                    tracing::warn!("Vsock: Send interrupted by EINTR, retrying...");
+                    0
+                }
+                Err(err) => {
+                    tracing::error!("Vsock: Send failed: {err:?}");
+                    break Err(anyhow!(err));
+                }
+            };
+            if position == data.len() {
+                tracing::debug!("Vsock: Send completed, total bytes sent: {position}");
+                break Ok(());
+            }
+            if position > data.len() {
+                tracing::error!("Vsock: Send exceeded data length");
+                break Err(anyhow!("Vsock: Send exceeded data length"));
+            }
+        }
+    }
+
+    /// Receive bytes from a Vsock socket. The method makes assumptios about the maximum data size
+    /// to be received in each chunk. The chunk size can be configured for optimal performance.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_data_size` - Total size of the buffer to receive data into.
+    /// * `chunk_size` - Size of each chunk to read from the socket.
+    ///
+    /// # Returns
+    ///
+    /// Vector of bytes received from the Vsock socket or error if the operation fails, or data
+    /// exceeds buffer size. This is to prevent buffer overflow attacks.
+    pub fn receive(&self, max_data_size: usize, chunk_size: usize) -> Result<Vec<u8>> {
+        if max_data_size < chunk_size {
+            tracing::error!(
+                "Vsock: Buffer length less than chunk size: {max_data_size} < {chunk_size}"
+            );
+            return Err(anyhow!("Vsock: Buffer too small"));
+        }
+        let mut buffer = vec![0u8; max_data_size];
+        let mut position = 0;
+        loop {
+            let left = position;
+            let right = left + chunk_size.min(max_data_size - left);
+            let recv_data_len = match socket::recv(
+                self.as_raw_fd(),
+                &mut buffer[left..right],
+                MsgFlags::empty(),
+            ) {
+                Ok(data_len) => {
+                    tracing::trace!("Vsock: Bytes received: {data_len}");
+                    data_len
+                }
+                // Interrupt signal: non-critical retry
+                Err(Error::EINTR) => {
+                    tracing::warn!("Vsock: Recv interrupted by EINTR, retrying...");
+                    0
+                }
+                Err(err) => {
+                    tracing::error!("Vsock: Recv failed: {err:?}");
+                    break Err(anyhow!(err));
+                }
+            };
+            position += recv_data_len;
+            if recv_data_len < chunk_size {
+                tracing::debug!("Vsock: Recv completed, total bytes received: {position}");
+                break Ok(buffer[..position].to_vec());
+            }
+            if position >= max_data_size {
+                tracing::error!("Vsock: Recv buffer full");
+                break Err(anyhow!("Vsock: Recv buffer full"));
+            }
+        }
     }
 }
