@@ -1,5 +1,6 @@
 # Tiny vsock library
 
+[![codecov](https://codecov.io/github/orlowskilp/tiny-vsock/graph/badge.svg?token=2R7TFgUos4)](https://codecov.io/github/orlowskilp/tiny-vsock)
 [![MIT License](https://img.shields.io/badge/license-MIT-green)](/LICENSE)
 
 Minimal vsock library, keeping the bare minimum functionality to communicate over vsock

@@ -39,6 +39,7 @@ WORKDIR ${HOME_DIR}
 
 # Install Rust and some useful tools
 ENV PATH=$PATH:${HOME_DIR}/.cargo/bin \
+    CARGO_BIN=${HOME_DIR}/.cargo/bin \
     CARGO_TERM_COLOR=always
 RUN echo eval '"$(direnv hook bash)"' >> ${HOME_DIR}/.bashrc
 RUN curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- -y && \
@@ -48,3 +49,6 @@ RUN curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- -y && \
     rustup component add \
         rust-analysis \
         rust-analyzer
+RUN curl -Os https://cli.codecov.io/latest/linux/codecov && \
+    chmod +x codecov && \
+    mv codecov ${CARGO_BIN}

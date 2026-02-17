@@ -21,10 +21,19 @@ doc:
 test:
 	cargo test --all-features
 
-# Run all tests (no coverage)
-.PHONY: test-logs
-test-logs:
-	cargo test --all-features -- --nocapture
+# Run unit and integration tests and measure coverage.
+# Additional flags can be passed with LLVM_COV_ARGS
+.PHONY: test-coverage
+test-coverage:
+	@cargo llvm-cov --all-features --codecov --output-path target/codecov.json
+	@codecov do-upload \
+		--sha $(shell git rev-parse @) \
+		--token $(CODECOV_TOKEN) \
+		--slug ${GH_SLUG} \
+		--git-service github \
+		--file target/codecov.json \
+		--report-type coverage
+	@odecov upload-process --slug ${GH_SLUG}
 
 # Clean up
 .PHONY: clean
