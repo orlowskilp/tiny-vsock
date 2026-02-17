@@ -108,6 +108,24 @@ fn test_vsock_connection_noone_listening_fail() {
     Vsock::connect_with_max_attempts(TEST_CID, TEST_PORT, LOW_MAX_ATTEMPTS).unwrap();
 }
 
+#[test]
+#[serial]
+#[should_panic(expected = "Invalid argument")]
+fn test_vsock_listen_on_already_connected_socket_fail() {
+    init_tracing();
+    let client_handle = thread::spawn(|| {
+        Vsock::connect(TEST_CID, TEST_PORT).expect("Failed to connect to vsock server");
+    });
+
+    let socket = Vsock::bind(TEST_PORT).expect("Failed to bind vsock server");
+    socket.listen().expect("Failed to listen on vsock server");
+
+    let client_socket =
+        Vsock::accept(&socket).expect("Failed to accept connection from vsock client");
+    client_handle.join().expect("Client thread panicked");
+    client_socket.listen().unwrap();
+}
+
 #[cfg(feature = "std-io")]
 #[test]
 #[serial]
