@@ -21,6 +21,11 @@ doc:
 test:
 	cargo test --all-features
 
+# Run all tests (no coverage)
+.PHONY: test-logs
+test-logs:
+	cargo test --all-features -- --nocapture
+
 # Clean up
 .PHONY: clean
 clean:
