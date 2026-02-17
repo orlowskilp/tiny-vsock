@@ -1,4 +1,6 @@
 use anyhow::{Result, anyhow};
+#[cfg(feature = "std-io")]
+use nix::sys::socket::Shutdown;
 use nix::{
     Error as NixError,
     sys::socket::{self, AddressFamily, Backlog, MsgFlags, SockFlag, SockType, VsockAddr},
@@ -288,7 +290,7 @@ impl Write for Vsock {
     /// Flush the Vsock socket. Since vsock is a stream-oriented socket, flush typically ensures
     /// all data is sent. We shutdown the write side to signal EOF, allowing read_to_end() to work properly.
     fn flush(&mut self) -> IoResult<()> {
-        socket::shutdown(self.as_raw_fd(), socket::Shutdown::Write).map_err(|err| {
+        socket::shutdown(self.as_raw_fd(), Shutdown::Write).map_err(|err| {
             tracing::error!("Vsock: Shutdown write failed: {err:?}");
             IoError::other(err)
         })

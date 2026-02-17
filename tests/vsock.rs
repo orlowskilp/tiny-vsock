@@ -92,6 +92,46 @@ fn test_vsock_connection_valid_transfer_ok() {
 }
 
 #[test]
+#[should_panic(expected = "Permission denied")]
+fn test_vsock_bind_on_reserved_port_fail() {
+    init_tracing();
+    const RESERVED_PORT: u32 = 10;
+    Vsock::bind(RESERVED_PORT).unwrap();
+}
+
+#[test]
+#[serial]
+#[should_panic(expected = "Invalid argument")]
+fn test_vsock_connect_to_socket_not_accepting_connections_fail() {
+    init_tracing();
+    let sock = Vsock::bind(TEST_PORT).expect("Failed to bind vsock server");
+    tracing::info!(
+        "{} Vsock server listening on CID {TEST_CID}, port {TEST_PORT}",
+        TEST_LOG_MESSAGE_PREFIX
+    );
+
+    Vsock::accept(&sock).expect("Failed to accept connection from vsock client");
+}
+
+#[test]
+#[serial]
+#[should_panic(expected = "Address already in use")]
+fn test_vsock_bind_to_used_port_fail() {
+    init_tracing();
+    let _sock = Vsock::bind(TEST_PORT).expect("Failed to bind vsock server");
+    tracing::info!(
+        "{} Vsock server no. 1 bound to port {TEST_PORT}",
+        TEST_LOG_MESSAGE_PREFIX
+    );
+
+    Vsock::bind(TEST_PORT).expect("Failed to bind vsock server");
+    tracing::info!(
+        "{} Vsock server no. 2 bound to port {TEST_PORT}",
+        TEST_LOG_MESSAGE_PREFIX
+    );
+}
+
+#[test]
 #[serial]
 #[should_panic(expected = "Buffer too small")]
 fn test_vsock_connection_chunk_bigger_than_max_size_fail() {

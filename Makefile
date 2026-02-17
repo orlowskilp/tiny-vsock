@@ -26,14 +26,14 @@ test:
 .PHONY: test-coverage
 test-coverage:
 	@cargo llvm-cov --all-features --codecov --output-path target/codecov.json
-	@codecov do-upload \
+# 	@codecov upload-coverage \
 		--sha $(shell git rev-parse @) \
 		--token $(CODECOV_TOKEN) \
 		--slug ${GH_SLUG} \
 		--git-service github \
 		--file target/codecov.json \
 		--report-type coverage
-	@odecov upload-process --slug ${GH_SLUG}
+# 	@codecov upload-process --slug ${GH_SLUG}
 
 # Clean up
 .PHONY: clean
