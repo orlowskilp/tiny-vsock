@@ -1,5 +1,6 @@
 # Tiny vsock library
 
+[![doc](https://img.shields.io/badge/doc_version-v0.1.2-blue)](https://orlowskilp.github.io/tiny-vsock/tiny_vsock/index.html)
 [![codecov](https://codecov.io/github/orlowskilp/tiny-vsock/graph/badge.svg?token=2R7TFgUos4)](https://codecov.io/github/orlowskilp/tiny-vsock)
 [![MIT License](https://img.shields.io/badge/license-MIT-green)](/LICENSE)
 

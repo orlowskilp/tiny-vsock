@@ -14,7 +14,7 @@ all:
 .PHONY: doc
 doc:
 	cargo fmt --check
-	cargo doc --no-deps
+	cargo doc --all-features --no-deps
 
 # Run all tests (no coverage)
 .PHONY: test
