@@ -181,6 +181,10 @@ impl Vsock {
             let right = left + chunk_size.min(data.len() - left);
             position += match socket::send(self.as_raw_fd(), &data[left..right], MsgFlags::empty())
             {
+                Ok(0) => {
+                    tracing::warn!("Vsock: Remote closed connection, total bytes sent: {position}");
+                    break Ok(());
+                }
                 Ok(data_len) => {
                     tracing::trace!("Vsock: Bytes sent: {data_len}");
                     data_len
@@ -188,7 +192,7 @@ impl Vsock {
                 // Interrupt signal: non-critical retry
                 Err(NixError::EINTR) => {
                     tracing::warn!("Vsock: Send interrupted by EINTR, retrying...");
-                    0
+                    continue;
                 }
                 Err(err) => {
                     tracing::error!("Vsock: Send failed: {err:?}");
@@ -235,6 +239,12 @@ impl Vsock {
                 &mut buffer[left..right],
                 MsgFlags::empty(),
             ) {
+                Ok(0) => {
+                    tracing::warn!(
+                        "Vsock: Remote closed connection, total bytes received: {position}"
+                    );
+                    break Ok(buffer[..position].to_vec());
+                }
                 Ok(data_len) => {
                     tracing::trace!("Vsock: Bytes received: {data_len}");
                     data_len
@@ -242,7 +252,7 @@ impl Vsock {
                 // Interrupt signal: non-critical retry
                 Err(NixError::EINTR) => {
                     tracing::warn!("Vsock: Recv interrupted by EINTR, retrying...");
-                    0
+                    continue;
                 }
                 Err(err) => {
                     tracing::error!("Vsock: Recv failed: {err:?}");
@@ -270,6 +280,10 @@ impl Write for Vsock {
     fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
         loop {
             match socket::send(self.as_raw_fd(), buf, MsgFlags::empty()) {
+                Ok(0) => {
+                    tracing::warn!("Vsock: Remote closed connection, total bytes sent: 0");
+                    break Ok(0);
+                }
                 Ok(data_len) => {
                     tracing::trace!("Vsock: Bytes sent: {data_len}");
                     break Ok(data_len);
@@ -289,6 +303,8 @@ impl Write for Vsock {
 
     /// Flush the Vsock socket. Since vsock is a stream-oriented socket, flush typically ensures
     /// all data is sent. We shutdown the write side to signal EOF, allowing read_to_end() to work properly.
+    ///
+    /// **Note**: After a socket is flushed you can no longer write to it!
     fn flush(&mut self) -> IoResult<()> {
         socket::shutdown(self.as_raw_fd(), Shutdown::Write).map_err(|err| {
             tracing::error!("Vsock: Shutdown write failed: {err:?}");
@@ -305,6 +321,10 @@ impl Read for Vsock {
     fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
         loop {
             match socket::recv(self.as_raw_fd(), buf, MsgFlags::empty()) {
+                Ok(0) => {
+                    tracing::warn!("Vsock: Remote closed connection, total bytes received: 0");
+                    break Ok(0);
+                }
                 Ok(data_len) => {
                     tracing::trace!("Vsock: Bytes received: {data_len}");
                     break Ok(data_len);
