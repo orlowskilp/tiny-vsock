@@ -1,7 +1,32 @@
 [package]
 name = "tiny-vsock"
 version = "0.1.2"
+authors = ["Lukasz Orlowski <lukasz@orlowski.io>"]
+categories = ["virtualization", "security", "network-programming"]
+documentation = "https://orlowskilp.github.io/tiny-vsock/tiny_vsock"
 edition = "2024"
+exclude = [
+  ".gitignore",
+  ".gitattributes",
+  ".git",
+  ".github",
+  ".devcontainer",
+  "codecov.yml",
+]
+homepage = "https://github.com/orlowskilp/tiny-vsock"
+keywords = ["vsock", "virtualization", "networking", "enclave", "security"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/orlowskilp/tiny-vsock"
+description = "Tiny vsock library for secure communication with enclaves"
+
+[[example]]
+name = "enclave-echo-service"
+path = "examples/enclave-echo-service.rs"
+
+[[example]]
+name = "parent-echo-client"
+path = "examples/parent-echo-client.rs"
 
 [features]
 std-io = []

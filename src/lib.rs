@@ -7,6 +7,89 @@
 //! # Features
 //! - `std-io`: Enables implementation of the standard `Read` and `Write` traits for `Vsock`,
 //!   allowing it to be used with standard Rust I/O patterns.
+//!
+//! # Examples
+//!
+//! ## Enclave echo service example
+//!
+//! Run this service inside an enclave. It listens for incoming connections from the parent and echoes back
+//! any data it receives.
+//!
+//! ```rust
+//! use anyhow::Result;
+//! use lib::Vsock;
+//! use tiny_vsock as lib;
+//!
+//! const PORT: u32 = 8080;
+//! const MAX_DATA_SIZE: usize = 8 * 1024;
+//! const CHUNK_SIZE: usize = 512;
+//!
+//! fn main() -> Result<()> {
+//!     let enclave_socket = Vsock::bind(PORT)
+//!         .inspect(|_| tracing::info!("Socket bind successful on port {PORT}"))
+//!         .inspect_err(|err| tracing::error!("Socket bind failed: {err:#?}"))?;
+//!     enclave_socket
+//!         .listen()
+//!         .inspect(|_| tracing::info!("Incomming connection..."))
+//!         .inspect_err(|err| tracing::error!("Socket listen failed: {err:#?}"))?;
+//!
+//!     let parent_socket = enclave_socket
+//!         .accept()
+//!         .inspect(|_| tracing::info!("Accepted new connection"))
+//!         .inspect_err(|err| tracing::error!("Socket accept failed: {err:#?}"))?;
+//!
+//!     let data_buffer = parent_socket
+//!         .receive(MAX_DATA_SIZE, CHUNK_SIZE)
+//!         .inspect(|data| tracing::info!("Received {} bytes of data", data.len()))
+//!         .inspect_err(|err| tracing::error!("Socket recv failed: {err:#?}"))?;
+//!     parent_socket
+//!         .send(&data_buffer, CHUNK_SIZE)
+//!         .inspect_err(|err| tracing::error!("Socket send failed: {err:#?}"))
+//!         .map(|_| {
+//!             tracing::info!(
+//!                 "Sent {} bytes of data. Closing connection",
+//!                 data_buffer.len()
+//!             )
+//!         })
+//! }
+//!
+//! ```
+//!
+//! ## Parent echo client example
+//!
+//! Run this client on the parent instance. It connects to the enclave echo service, sends a
+//! message, and prints the echoed message received from the enclave.
+//!
+//! ```rust
+//! use anyhow::Result;
+//! use lib::Vsock;
+//! use tiny_vsock as lib;
+//!
+//! const PORT: u32 = 8080;
+//! const CID: u32 = 16;
+//! const MAX_DATA_SIZE: usize = 8 * 1024;
+//! const CHUNK_SIZE: usize = 512;
+//! const MESSAGE: &[u8] = b"Hello from the parent!";
+//!
+//! fn main() -> Result<()> {
+//!     let enclave_socket = Vsock::connect(CID, PORT)
+//!         .inspect(|_| tracing::info!("Connected to enclave on port {PORT} with context ID {CID}"))
+//!         .inspect_err(|err| tracing::error!("Socket connect failed: {err:#?}"))?;
+//!
+//!     enclave_socket
+//!         .send(MESSAGE, CHUNK_SIZE)
+//!         .inspect(|_| tracing::info!("Sent {} bytes of data", MESSAGE.len()))
+//!         .inspect_err(|err| tracing::error!("Socket send failed: {err:#?}"))?;
+//!     enclave_socket
+//!         .receive(MAX_DATA_SIZE, CHUNK_SIZE)
+//!         .map(|data| {
+//!             let message = String::from_utf8_lossy(&data);
+//!             tracing::info!("Received message from enclave: {message}")
+//!         })
+//!         .inspect_err(|err| tracing::error!("Socket recv failed: {err:#?}"))
+//! }
+//!
+//! ```
 
 use anyhow::{Result, anyhow};
 #[cfg(feature = "std-io")]
