@@ -1,0 +1,8 @@
+.devcontainer   export-ignore
+.dockerignore   export-ignore
+.github         export-ignore
+.gitignore      export-ignore
+.gitattributes  export-ignore
+.vscode         export-ignore
+Cargo.lock      export-ignore
+codecov.yml     export-ignore

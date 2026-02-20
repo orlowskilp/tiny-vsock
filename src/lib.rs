@@ -1,3 +1,13 @@
+//! Tiny vsock is a Rust library that provides an abstraction over vsock (`AF_VSOCK`) sockets
+//! for communication between hosts and virtual machines or enclaves. It offers a simple API
+//! for creating, connecting, binding, listening, accepting, sending, and receiving data through
+//! vsock sockets. The library is designed to be efficient and easy to use, with built-in retry
+//! mechanisms for connection attempts and chunked data transfer for optimal performance.
+//!
+//! # Features
+//! - `std-io`: Enables implementation of the standard `Read` and `Write` traits for `Vsock`,
+//!   allowing it to be used with standard Rust I/O patterns.
+
 use anyhow::{Result, anyhow};
 #[cfg(feature = "std-io")]
 use nix::sys::socket::Shutdown;
@@ -31,7 +41,7 @@ impl AsRawFd for Vsock {
 }
 
 impl AsFd for Vsock {
-    /// Return the `BorrowedFd` of the Vsock socket.
+    /// Return the Vsock file descriptor as a `BorrowedFd` for use with nix socket operations.
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.socket_fd.as_fd()
     }
@@ -46,7 +56,7 @@ impl Vsock {
     /// CID address used for communication with the Nitro Enclave parent instance. This is a
     /// convention in AWS Nitro Enclaves and is not meant to be used for general vsock
     /// communication outside of Nitro Enclaves.
-    pub const ANY_PARENT_NE_CID_ADDR: u32 = 3;
+    pub const PARENT_NE_CID_ADDR: u32 = 3;
 
     /// Idiomatic method to create a new Vsock instance from a given socket file descriptor. Not meant
     /// for public use.
@@ -63,7 +73,7 @@ impl Vsock {
             None,
         )
         .map_err(|err| {
-            tracing::error!("Vsock: Create socket failed: {:?}", err);
+            tracing::error!("Vsock: Create socket failed: {err:#?}");
             anyhow!(err)
         })
     }
@@ -78,8 +88,8 @@ impl Vsock {
     /// # Returns
     ///
     /// A `Vsock` instance representing the connected socket or an error if the connection
-    /// fails after 5 attempts. The method implements an exponential backoff strategy for retrying failed
-    /// connection attempts.
+    /// fails after 5 attempts. The method implements an exponential backoff strategy for
+    /// retrying failed connection attempts.
     pub fn connect(cid: u32, port: u32) -> Result<Self> {
         Self::connect_with_max_attempts(cid, port, Self::CONNECT_ATTEMPTS)
     }
@@ -104,7 +114,7 @@ impl Vsock {
                 Ok(_) => return Ok(vsock),
                 Err(err) => {
                     tracing::warn!(
-                        "Vsock: Connect attempt {} failed: {err:?}, retrying...",
+                        "Vsock: Connect attempt {} failed: {err:#?}, retrying...",
                         i + 1
                     )
                 }
@@ -113,7 +123,7 @@ impl Vsock {
             sleep(Duration::from_secs(1 << i));
         }
 
-        tracing::error!("Vsock: Connect failed after {} attempts", max_attempts);
+        tracing::error!("Vsock: Connect failed after {max_attempts} attempts");
         Err(anyhow!("Vsock: Connect failed"))
     }
 
@@ -131,11 +141,11 @@ impl Vsock {
         let sock_addr = VsockAddr::new(Self::ANY_CID_ADDR, port);
         socket::bind(socket_fd.as_raw_fd(), &sock_addr)
             .map_err(|err| {
-                tracing::error!("Vsock: Bind failed: {:?}", err);
+                tracing::error!("Vsock: Bind failed: {err:#?}");
                 anyhow!(err)
             })
             .map(|_| {
-                tracing::debug!("Vsock: Bound to port {}", port);
+                tracing::debug!("Vsock: Bound to port {port}");
                 Self::new(socket_fd)
             })
     }
@@ -144,7 +154,7 @@ impl Vsock {
     pub fn listen(&self) -> Result<()> {
         const MAX_QUEUE_LEN: i32 = 128;
         socket::listen(&self.as_fd(), Backlog::new(MAX_QUEUE_LEN)?).map_err(|err| {
-            tracing::error!("Vsock: Listen failed: {:?}", err);
+            tracing::error!("Vsock: Listen failed: {err:#?}");
             anyhow!(err)
         })
     }
@@ -154,7 +164,7 @@ impl Vsock {
     pub fn accept(&self) -> Result<Self> {
         socket::accept(self.as_raw_fd())
             .map_err(|err| {
-                tracing::error!("Vsock: Accept failed: {:?}", err);
+                tracing::error!("Vsock: Accept failed: {err:#?}");
                 anyhow!(err)
             })
             .map(|raw_fd| {
@@ -195,7 +205,7 @@ impl Vsock {
                     continue;
                 }
                 Err(err) => {
-                    tracing::error!("Vsock: Send failed: {err:?}");
+                    tracing::error!("Vsock: Send failed: {err:#?}");
                     break Err(anyhow!(err));
                 }
             };
@@ -255,7 +265,7 @@ impl Vsock {
                     continue;
                 }
                 Err(err) => {
-                    tracing::error!("Vsock: Recv failed: {err:?}");
+                    tracing::error!("Vsock: Recv failed: {err:#?}");
                     break Err(anyhow!(err));
                 }
             };
@@ -294,7 +304,7 @@ impl Write for Vsock {
                     continue;
                 }
                 Err(errno) => {
-                    tracing::error!("Vsock: Send failed: {errno:?}");
+                    tracing::error!("Vsock: Send failed: {errno:#?}");
                     break Err(IoError::other(errno));
                 }
             }
@@ -335,7 +345,7 @@ impl Read for Vsock {
                     continue;
                 }
                 Err(errno) => {
-                    tracing::error!("Vsock: Recv failed: {errno:?}");
+                    tracing::error!("Vsock: Recv failed: {errno:#?}");
                     break Err(IoError::other(errno));
                 }
             }
