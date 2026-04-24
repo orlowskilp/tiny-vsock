@@ -36,14 +36,14 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tiny-vsock = "0.1.1"
+tiny-vsock = "0.1.2"
 ```
 
 To enable `std::io::Read` / `std::io::Write` trait implementations:
 
 ```toml
 [dependencies]
-tiny-vsock = { version = "0.1.1", features = ["std-io"] }
+tiny-vsock = { version = "0.1.2", features = ["std-io"] }
 ```
 
 ---
@@ -71,6 +71,32 @@ use tiny_vsock::Vsock;
 // Vsock::ANY_PARENT_NE_CID_ADDR (3) for Nitro Enclave parent, or supply your own CID
 let conn = Vsock::connect(Vsock::ANY_PARENT_NE_CID_ADDR, 5000)?;
 conn.send(b"Hello from the enclave!", 1024)?;
+```
+
+---
+
+## Examples
+
+The repository ships three runnable examples in `examples/`.
+
+### `server` and `client`
+
+Start the server in one terminal, then connect from another:
+
+```sh
+cargo run --example server -- 5000
+cargo run --example client -- 3 5000
+```
+
+Replace `3` with the CID of your host or enclave as appropriate.
+
+### `std_io_echo`
+
+Demonstrates the `std-io` feature. Requires `--features std-io`:
+
+```sh
+cargo run --example std_io_echo --features std-io -- server 5000
+cargo run --example std_io_echo --features std-io -- client 3 5000
 ```
 
 ---
