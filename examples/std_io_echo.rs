@@ -1,13 +1,9 @@
-//! Demonstrates the `std-io` feature: server reads via `BufReader` + `read_to_string`;
-//! client writes via `write_all` + `flush` (flush shuts down the write side to signal EOF).
-//!
-//! Build and run with the feature enabled:
-//! ```shell
-//!   cargo run --example std_io_echo --features std-io -- server <port>
-//!   cargo run --example std_io_echo --features std-io -- client <cid> <port>
-//! ```
-//!
-//! Without the feature the binary prints a notice and exits.
+use anyhow::{Result, anyhow};
+
+// Port for the echo service.
+const PORT: u32 = 5000;
+// CID of the parent instance (AWS Nitro Enclave convention).
+const CID: u32 = 3;
 
 #[cfg(not(feature = "std-io"))]
 fn main() {
@@ -15,60 +11,45 @@ fn main() {
 }
 
 #[cfg(feature = "std-io")]
-fn main() -> anyhow::Result<()> {
-    use anyhow::anyhow;
+fn main() -> Result<()> {
     use std::io::{BufReader, Read, Write};
     use tiny_vsock::Vsock;
 
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
-
-    let mut args = std::env::args().skip(1);
-    let role = args
-        .next()
-        .ok_or_else(|| anyhow!("usage: std_io_echo server <port> | client <cid> <port>"))?;
+    let role = std::env::args()
+        .nth(1)
+        .ok_or_else(|| anyhow!("usage: std_io_echo server | client"))?;
 
     match role.as_str() {
         "server" => {
-            let port: u32 = args
-                .next()
-                .ok_or_else(|| anyhow!("usage: std_io_echo server <port>"))?
-                .parse()?;
+            let listener = Vsock::bind(PORT)
+                .inspect(|_| tracing::info!("Bound to port {PORT}"))
+                .inspect_err(|err| tracing::error!("Socket bind failed: {err:#?}"))?;
+            listener
+                .listen()
+                .inspect_err(|err| tracing::error!("Socket listen failed: {err:#?}"))?;
 
-            let listener = Vsock::bind(port)?;
-            listener.listen()?;
-
-            tracing::info!(port, "listening");
-
-            let mut conn = listener.accept()?;
-
-            tracing::info!("accepted connection");
+            let mut conn = listener
+                .accept()
+                .inspect(|_| tracing::info!("Accepted connection"))
+                .inspect_err(|err| tracing::error!("Socket accept failed: {err:#?}"))?;
 
             let mut body = String::new();
-            BufReader::new(&mut conn).read_to_string(&mut body)?;
-
-            tracing::info!(message = %body, bytes = body.len(), "received");
+            BufReader::new(&mut conn)
+                .read_to_string(&mut body)
+                .inspect(|bytes| tracing::info!("Received {bytes} bytes: {body}"))
+                .inspect_err(|err| tracing::error!("Read failed: {err:#?}"))?;
         }
         "client" => {
-            let cid: u32 = args
-                .next()
-                .ok_or_else(|| anyhow!("usage: std_io_echo client <cid> <port>"))?
-                .parse()?;
-            let port: u32 = args
-                .next()
-                .ok_or_else(|| anyhow!("usage: std_io_echo client <cid> <port>"))?
-                .parse()?;
+            let mut conn = Vsock::connect(CID, PORT)
+                .inspect(|_| tracing::info!("Connected to CID {CID} on port {PORT}"))
+                .inspect_err(|err| tracing::error!("Socket connect failed: {err:#?}"))?;
 
-            let mut conn = Vsock::connect(cid, port)?;
-
-            tracing::info!(cid, port, "connected");
-
-            conn.write_all(b"Hello via std::io!")?;
-            // flush shuts down the write side, allowing the server's read_to_string to complete.
-            conn.flush()?;
-
-            tracing::info!("sent and flushed");
+            conn.write_all(b"Hello via std::io!")
+                .inspect(|_| tracing::info!("Sent message"))
+                .inspect_err(|err| tracing::error!("Write failed: {err:#?}"))?;
+            // flush shuts down the write side, signalling EOF to the server's read_to_string.
+            conn.flush()
+                .inspect_err(|err| tracing::error!("Flush failed: {err:#?}"))?;
         }
         other => {
             return Err(anyhow!(

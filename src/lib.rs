@@ -10,86 +10,15 @@
 //!
 //! # Examples
 //!
-//! ## Enclave echo service example
-//!
-//! Run this service inside an enclave. It listens for incoming connections from the parent and echoes back
-//! any data it receives.
-//!
-//! ```rust
-//! use anyhow::Result;
-//! use lib::Vsock;
-//! use tiny_vsock as lib;
-//!
-//! const PORT: u32 = 8080;
-//! const MAX_DATA_SIZE: usize = 8 * 1024;
-//! const CHUNK_SIZE: usize = 512;
-//!
-//! fn main() -> Result<()> {
-//!     let enclave_socket = Vsock::bind(PORT)
-//!         .inspect(|_| tracing::info!("Socket bind successful on port {PORT}"))
-//!         .inspect_err(|err| tracing::error!("Socket bind failed: {err:#?}"))?;
-//!     enclave_socket
-//!         .listen()
-//!         .inspect(|_| tracing::info!("Incomming connection..."))
-//!         .inspect_err(|err| tracing::error!("Socket listen failed: {err:#?}"))?;
-//!
-//!     let parent_socket = enclave_socket
-//!         .accept()
-//!         .inspect(|_| tracing::info!("Accepted new connection"))
-//!         .inspect_err(|err| tracing::error!("Socket accept failed: {err:#?}"))?;
-//!
-//!     let data_buffer = parent_socket
-//!         .receive(MAX_DATA_SIZE, CHUNK_SIZE)
-//!         .inspect(|data| tracing::info!("Received {} bytes of data", data.len()))
-//!         .inspect_err(|err| tracing::error!("Socket recv failed: {err:#?}"))?;
-//!     parent_socket
-//!         .send(&data_buffer, CHUNK_SIZE)
-//!         .inspect_err(|err| tracing::error!("Socket send failed: {err:#?}"))
-//!         .map(|_| {
-//!             tracing::info!(
-//!                 "Sent {} bytes of data. Closing connection",
-//!                 data_buffer.len()
-//!             )
-//!         })
-//! }
-//!
-//! ```
-//!
-//! ## Parent echo client example
-//!
-//! Run this client on the parent instance. It connects to the enclave echo service, sends a
-//! message, and prints the echoed message received from the enclave.
-//!
-//! ```rust
-//! use anyhow::Result;
-//! use lib::Vsock;
-//! use tiny_vsock as lib;
-//!
-//! const PORT: u32 = 8080;
-//! const CID: u32 = 16;
-//! const MAX_DATA_SIZE: usize = 8 * 1024;
-//! const CHUNK_SIZE: usize = 512;
-//! const MESSAGE: &[u8] = b"Hello from the parent!";
-//!
-//! fn main() -> Result<()> {
-//!     let enclave_socket = Vsock::connect(CID, PORT)
-//!         .inspect(|_| tracing::info!("Connected to enclave on port {PORT} with context ID {CID}"))
-//!         .inspect_err(|err| tracing::error!("Socket connect failed: {err:#?}"))?;
-//!
-//!     enclave_socket
-//!         .send(MESSAGE, CHUNK_SIZE)
-//!         .inspect(|_| tracing::info!("Sent {} bytes of data", MESSAGE.len()))
-//!         .inspect_err(|err| tracing::error!("Socket send failed: {err:#?}"))?;
-//!     enclave_socket
-//!         .receive(MAX_DATA_SIZE, CHUNK_SIZE)
-//!         .map(|data| {
-//!             let message = String::from_utf8_lossy(&data);
-//!             tracing::info!("Received message from enclave: {message}")
-//!         })
-//!         .inspect_err(|err| tracing::error!("Socket recv failed: {err:#?}"))
-//! }
-//!
-//! ```
+//! - [`enclave-echo-service`](https://github.com/orlowskilp/tiny-vsock/blob/master/examples/enclave-echo-service.rs)
+//!   — binds, accepts one
+//!   connection, receives data, and echoes it back; run inside the enclave
+//! - [`parent-echo-client`](https://github.com/orlowskilp/tiny-vsock/blob/master/examples/parent-echo-client.rs)
+//!   — connects to the enclave
+//!   service, sends a message, and reads the echo; run on the parent instance
+//! - [`std_io_echo`](https://github.com/orlowskilp/tiny-vsock/blob/master/examples/std_io_echo.rs)
+//!   — demonstrates `std::io::Read` /
+//!   `std::io::Write` via `BufReader` and `flush`; requires `--features std-io`
 
 use anyhow::{Result, anyhow};
 #[cfg(feature = "std-io")]
@@ -218,7 +147,7 @@ impl Vsock {
     ///
     /// # Returns
     ///
-    /// A `Vsock` instance representing the bound socket or an error if the bind operation.
+    /// A `Vsock` instance representing the bound socket, or an error if the bind operation fails.
     pub fn bind(port: u32) -> Result<Self> {
         let socket_fd = Vsock::socket()?;
         let sock_addr = VsockAddr::new(Self::ANY_CID_ADDR, port);
@@ -303,18 +232,21 @@ impl Vsock {
         }
     }
 
-    /// Receive bytes from a Vsock socket. The method makes assumptios about the maximum data size
-    /// to be received in each chunk. The chunk size can be configured for optimal performance.
+    /// Receive bytes from a Vsock socket. The method reads data in chunks up to the specified
+    /// maximum buffer size. The chunk size can be configured for optimal performance.
     ///
     /// # Arguments
     ///
-    /// * `max_data_size` - Total size of the buffer to receive data into.
-    /// * `chunk_size` - Size of each chunk to read from the socket.
+    /// * `max_data_size` - Total capacity of the receive buffer in bytes; must be greater than or
+    ///   equal to `chunk_size`.
+    /// * `chunk_size` - Size of each chunk to read from the socket in bytes.
     ///
     /// # Returns
     ///
-    /// Vector of bytes received from the Vsock socket or error if the operation fails, or data
-    /// exceeds buffer size. This is to prevent buffer overflow attacks.
+    /// A `Vec<u8>` containing the received bytes on success, truncated to the number of bytes
+    /// actually received. Returns an error if `max_data_size` is less than `chunk_size`, if the
+    /// buffer fills completely before the peer closes the connection, or if the underlying socket
+    /// operation fails.
     pub fn receive(&self, max_data_size: usize, chunk_size: usize) -> Result<Vec<u8>> {
         if max_data_size < chunk_size {
             tracing::error!(
@@ -394,10 +326,12 @@ impl Write for Vsock {
         }
     }
 
-    /// Flush the Vsock socket. Since vsock is a stream-oriented socket, flush typically ensures
-    /// all data is sent. We shutdown the write side to signal EOF, allowing read_to_end() to work properly.
+    /// Shut down the write side of the Vsock socket, signalling EOF to the peer.
     ///
-    /// **Note**: After a socket is flushed you can no longer write to it!
+    /// This allows the peer's `read_to_end` or `read_to_string` calls to return cleanly.
+    /// After this call, any further attempt to write to the socket will fail.
+    ///
+    /// **Note**: This operation is irreversible — the socket cannot be written to afterwards.
     fn flush(&mut self) -> IoResult<()> {
         socket::shutdown(self.as_raw_fd(), Shutdown::Write).map_err(|err| {
             tracing::error!("Vsock: Shutdown write failed: {err:?}");

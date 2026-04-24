@@ -41,14 +41,6 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 serial_test = "3.3.1"
 
 [[example]]
-name = "server"
-path = "examples/server.rs"
-
-[[example]]
-name = "client"
-path = "examples/client.rs"
-
-[[example]]
 name = "std_io_echo"
 path = "examples/std_io_echo.rs"
 required-features = ["std-io"]

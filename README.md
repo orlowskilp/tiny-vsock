@@ -68,8 +68,8 @@ println!("Received: {:?}", data);
 ```rust
 use tiny_vsock::Vsock;
 
-// Vsock::ANY_PARENT_NE_CID_ADDR (3) for Nitro Enclave parent, or supply your own CID
-let conn = Vsock::connect(Vsock::ANY_PARENT_NE_CID_ADDR, 5000)?;
+// Vsock::PARENT_NE_CID_ADDR (3) for Nitro Enclave parent, or supply your own CID
+let conn = Vsock::connect(Vsock::PARENT_NE_CID_ADDR, 5000)?;
 conn.send(b"Hello from the enclave!", 1024)?;
 ```
 
@@ -79,24 +79,27 @@ conn.send(b"Hello from the enclave!", 1024)?;
 
 The repository ships three runnable examples in `examples/`.
 
-### `server` and `client`
+### `enclave-echo-service` and `parent-echo-client`
 
-Start the server in one terminal, then connect from another:
+A complete Nitro Enclave echo pair. Run the service inside the enclave and the
+client on the parent instance:
 
 ```sh
-cargo run --example server -- 5000
-cargo run --example client -- 3 5000
+cargo run --example enclave-echo-service
+cargo run --example parent-echo-client
 ```
 
-Replace `3` with the CID of your host or enclave as appropriate.
+Both examples use compile-time constants (`PORT`, `CID`, `MAX_DATA_SIZE`,
+`CHUNK_SIZE`) defined at the top of each file — edit them to match your
+environment before running.
 
 ### `std_io_echo`
 
 Demonstrates the `std-io` feature. Requires `--features std-io`:
 
 ```sh
-cargo run --example std_io_echo --features std-io -- server 5000
-cargo run --example std_io_echo --features std-io -- client 3 5000
+cargo run --example std_io_echo --features std-io -- server
+cargo run --example std_io_echo --features std-io -- client
 ```
 
 ---
@@ -115,10 +118,10 @@ cargo run --example std_io_echo --features std-io -- client 3 5000
 
 ### Useful constants
 
-| Constant                        | Value      | Purpose                                            |
-| ------------------------------- | ---------- | -------------------------------------------------- |
-| `Vsock::ANY_CID_ADDR`           | `u32::MAX` | Bind address that accepts connections from any CID |
-| `Vsock::ANY_PARENT_NE_CID_ADDR` | `3`        | CID of the parent instance in AWS Nitro Enclaves   |
+| Constant                    | Value      | Purpose                                            |
+| --------------------------- | ---------- | -------------------------------------------------- |
+| `Vsock::ANY_CID_ADDR`       | `u32::MAX` | Bind address that accepts connections from any CID |
+| `Vsock::PARENT_NE_CID_ADDR` | `3`        | CID of the parent instance in AWS Nitro Enclaves   |
 
 ---
 
