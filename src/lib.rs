@@ -34,6 +34,7 @@ use std::{
         fd::{AsFd, BorrowedFd, FromRawFd, OwnedFd},
         unix::io::{AsRawFd, RawFd},
     },
+    result::Result as StdResult,
     thread::sleep,
     time::Duration,
 };
@@ -197,12 +198,33 @@ impl Vsock {
     ///
     /// Empty result indicating success or error if the operation fails.
     pub fn send(&self, data: &[u8], chunk_size: usize) -> Result<()> {
+        Self::send_loop(data, chunk_size, |chunk| {
+            socket::send(self.as_raw_fd(), chunk, MsgFlags::empty())
+        })
+    }
+
+    /// Core send loop parameterized over the underlying transport operation.
+    ///
+    /// Extracted to enable unit testing of the chunking and position-tracking logic without
+    /// a real socket file descriptor. The public `send` method delegates here, passing a
+    /// closure that calls `socket::send`.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - Slice of bytes to be sent entirely.
+    /// * `chunk_size` - Maximum bytes handed to `transport` per call.
+    /// * `transport` - Called repeatedly with successive slices of `data`; returns the number
+    ///   of bytes consumed, `0` for a remote close, or a [`NixError`] on failure.
+    fn send_loop(
+        data: &[u8],
+        chunk_size: usize,
+        mut transport: impl FnMut(&[u8]) -> StdResult<usize, NixError>,
+    ) -> Result<()> {
         let mut position = 0;
         loop {
             let left = position;
             let right = left + chunk_size.min(data.len() - left);
-            position += match socket::send(self.as_raw_fd(), &data[left..right], MsgFlags::empty())
-            {
+            position += match transport(&data[left..right]) {
                 Ok(0) => {
                     tracing::warn!("Vsock: Remote closed connection, total bytes sent: {position}");
                     break Ok(());
@@ -254,16 +276,35 @@ impl Vsock {
             );
             return Err(anyhow!("Vsock: Buffer too small"));
         }
+        Self::receive_loop(max_data_size, chunk_size, |buf| {
+            socket::recv(self.as_raw_fd(), buf, MsgFlags::empty())
+        })
+    }
+
+    /// Core receive loop parameterized over the underlying transport operation.
+    ///
+    /// Extracted to enable unit testing of the chunking and position-tracking logic without
+    /// a real socket file descriptor. The public `receive` method validates arguments and then
+    /// delegates here, passing a closure that calls `socket::recv`.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_data_size` - Total capacity of the receive buffer; must be `>= chunk_size` (the
+    ///   caller is responsible for enforcing this precondition before calling `receive_loop`).
+    /// * `chunk_size` - Maximum bytes requested from `transport` per call.
+    /// * `transport` - Called repeatedly with a mutable slice of the buffer; returns the number
+    ///   of bytes written, `0` for a remote close, or a [`NixError`] on failure.
+    fn receive_loop(
+        max_data_size: usize,
+        chunk_size: usize,
+        mut transport: impl FnMut(&mut [u8]) -> StdResult<usize, NixError>,
+    ) -> Result<Vec<u8>> {
         let mut buffer = vec![0u8; max_data_size];
         let mut position = 0;
         loop {
             let left = position;
             let right = left + chunk_size.min(max_data_size - left);
-            let recv_data_len = match socket::recv(
-                self.as_raw_fd(),
-                &mut buffer[left..right],
-                MsgFlags::empty(),
-            ) {
+            let recv_data_len = match transport(&mut buffer[left..right]) {
                 Ok(0) => {
                     tracing::warn!(
                         "Vsock: Remote closed connection, total bytes received: {position}"
@@ -326,7 +367,7 @@ impl Write for Vsock {
         }
     }
 
-    /// Shut down the write side of the Vsock socket, signalling EOF to the peer.
+    /// Shut down the write side of the Vsock socket, signaling EOF to the peer.
     ///
     /// This allows the peer's `read_to_end` or `read_to_string` calls to return cleanly.
     /// After this call, any further attempt to write to the socket will fail.
@@ -367,5 +408,261 @@ impl Read for Vsock {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nix::errno::Errno;
+
+    // ── receive() input validation ────────────────────────────────────────────
+
+    // The validation check in `receive` is pure Rust and runs before any vsock
+    // syscall. We can reach it by wrapping a real (but non-vsock) OS file
+    // descriptor obtained from `nix::unistd::pipe`, which is always available.
+    // The `Vsock` wrapper is dropped at the end of each test, closing its fd.
+    fn make_pipe_vsock() -> Vsock {
+        use nix::unistd::pipe;
+        // `pipe()` returns (read_end, write_end); we use the read end.
+        let (read_fd, write_fd) = pipe().expect("pipe() failed in test");
+        // Explicitly drop the write end so it doesn't leak.
+        drop(write_fd);
+        Vsock::new(read_fd)
+    }
+
+    #[test]
+    #[should_panic(expected = "Buffer too small")]
+    fn receive_returns_error_when_max_size_less_than_chunk_size_fail() {
+        const MAX_DATA_SIZE: usize = 16;
+        const CHUNK_SIZE: usize = 32;
+        let vsock = make_pipe_vsock();
+        vsock.receive(MAX_DATA_SIZE, CHUNK_SIZE).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Buffer too small")]
+    fn receive_returns_error_when_max_size_equals_zero_and_chunk_size_nonzero_fail() {
+        const MAX_DATA_SIZE: usize = 0;
+        const MIN_NONZERO_CHUNK_SIZE: usize = 1;
+        let vsock = make_pipe_vsock();
+        vsock
+            .receive(MAX_DATA_SIZE, MIN_NONZERO_CHUNK_SIZE)
+            .unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Buffer too small")]
+    fn receive_returns_error_when_max_size_one_less_than_chunk_size_fail() {
+        const CHUNK_SIZE: usize = 1024;
+        const MAX_DATA_SIZE: usize = CHUNK_SIZE - 1;
+        let vsock = make_pipe_vsock();
+        vsock.receive(MAX_DATA_SIZE, CHUNK_SIZE).unwrap();
+    }
+
+    // ── connect_with_max_attempts() zero-iteration path ───────────────────────
+
+    #[test]
+    #[should_panic(expected = "Connect failed")]
+    fn connect_with_zero_attempts_returns_error_immediately_fail() {
+        const PORT: u32 = 12345;
+        Vsock::connect_with_max_attempts(u32::MAX, PORT, 0).unwrap();
+    }
+
+    // ── send_loop() unit tests (fake transport) ───────────────────────────────
+
+    #[test]
+    fn send_loop_delivers_entire_payload_in_one_chunk_ok() {
+        const CHUNK_SIZE: usize = 64;
+        let data = b"hello";
+        let mut received: Vec<u8> = Vec::new();
+        Vsock::send_loop(data, CHUNK_SIZE, |chunk| {
+            received.extend_from_slice(chunk);
+            Ok(chunk.len())
+        })
+        .unwrap();
+        assert_eq!(received, data);
+    }
+
+    #[test]
+    fn send_loop_splits_payload_across_multiple_chunks_ok() {
+        const CHUNK_SIZE: usize = 3;
+        const PAYLOAD_LEN: u8 = 10;
+        let data: Vec<u8> = (0u8..PAYLOAD_LEN).collect();
+        let mut calls: Vec<Vec<u8>> = Vec::new();
+        Vsock::send_loop(&data, CHUNK_SIZE, |chunk| {
+            calls.push(chunk.to_vec());
+            Ok(chunk.len())
+        })
+        .unwrap();
+        // 10 bytes / chunk_size 3  →  slices of 3, 3, 3, 1
+        assert_eq!(calls.len(), 4);
+        assert_eq!(calls[0], &data[0..3]);
+        assert_eq!(calls[1], &data[3..6]);
+        assert_eq!(calls[2], &data[6..9]);
+        assert_eq!(calls[3], &data[9..10]);
+    }
+
+    #[test]
+    fn send_loop_retries_on_eintr_and_still_completes_ok() {
+        const CHUNK_SIZE: usize = 64;
+        let data = b"retry";
+        let mut call_count = 0usize;
+        // Return EINTR on the first call, succeed on the second.
+        Vsock::send_loop(data, CHUNK_SIZE, |chunk| {
+            call_count += 1;
+            if call_count == 1 {
+                Err(Errno::EINTR)
+            } else {
+                Ok(chunk.len())
+            }
+        })
+        .unwrap();
+        assert_eq!(call_count, 2);
+    }
+
+    #[test]
+    fn send_loop_stops_cleanly_when_transport_returns_zero_ok() {
+        const CHUNK_SIZE: usize = 64;
+        let data = b"goodbye";
+        let mut call_count = 0usize;
+        Vsock::send_loop(data, CHUNK_SIZE, |_| {
+            call_count += 1;
+            Ok(0) // peer closed
+        })
+        .unwrap();
+        // A zero-byte send is treated as a graceful close, not an error.
+        assert_eq!(call_count, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "ECONNRESET")]
+    fn send_loop_propagates_transport_error_fail() {
+        const CHUNK_SIZE: usize = 64;
+        let data = b"oops";
+        Vsock::send_loop(data, CHUNK_SIZE, |_| Err(Errno::ECONNRESET)).unwrap();
+    }
+
+    #[test]
+    fn send_loop_with_empty_data_calls_transport_once_with_empty_slice_ok() {
+        // When data is empty: data.len() == 0, so left == right == 0 on the
+        // first (and only) iteration. The transport receives &[] and returns
+        // Ok(0), which triggers the "remote closed" branch — Ok(()) is returned.
+        const CHUNK_SIZE: usize = 8;
+        let data: &[u8] = b"";
+        let mut call_count = 0usize;
+        Vsock::send_loop(data, CHUNK_SIZE, |chunk| {
+            call_count += 1;
+            assert!(chunk.is_empty(), "transport must receive an empty slice");
+            Ok(chunk.len()) // 0 → remote-closed branch
+        })
+        .unwrap();
+        assert_eq!(call_count, 1);
+    }
+
+    // ── receive_loop() unit tests (fake transport) ────────────────────────────
+
+    #[test]
+    fn receive_loop_collects_single_partial_chunk_on_short_read_ok() {
+        // A `recv_data_len < chunk_size` read signals end-of-stream.
+        const MAX_DATA_SIZE: usize = 64;
+        const CHUNK_SIZE: usize = 16;
+        let payload = b"hi";
+        let result = Vsock::receive_loop(MAX_DATA_SIZE, CHUNK_SIZE, |buf| {
+            let n = payload.len().min(buf.len());
+            buf[..n].copy_from_slice(&payload[..n]);
+            Ok(n) // n < chunk_size → loop exits
+        });
+        assert_eq!(result.unwrap(), payload);
+    }
+
+    #[test]
+    fn receive_loop_reassembles_multiple_full_chunks_followed_by_short_read_ok() {
+        // Three full chunks of 4 bytes each, then a short final read.
+        const MAX_DATA_SIZE: usize = 64;
+        const CHUNK_SIZE: usize = 4;
+        const PAYLOAD_LEN: u8 = 13;
+        let payload: Vec<u8> = (0u8..PAYLOAD_LEN).collect();
+        let mut pos = 0usize;
+        let result = Vsock::receive_loop(MAX_DATA_SIZE, CHUNK_SIZE, |buf| {
+            let remaining = payload.len() - pos;
+            let n = remaining.min(buf.len());
+            buf[..n].copy_from_slice(&payload[pos..pos + n]);
+            pos += n;
+            Ok(n)
+        });
+        assert_eq!(result.unwrap(), payload);
+    }
+
+    #[test]
+    fn receive_loop_stops_cleanly_on_remote_close_returning_zero_ok() {
+        const MAX_DATA_SIZE: usize = 64;
+        const CHUNK_SIZE: usize = 8;
+        let result = Vsock::receive_loop(MAX_DATA_SIZE, CHUNK_SIZE, |_| {
+            Ok(0) // Zero bytes received before remote closed → empty vec.
+        });
+        assert_eq!(result.unwrap(), b"");
+    }
+
+    #[test]
+    fn receive_loop_retries_on_eintr_and_still_completes_ok() {
+        const MAX_DATA_SIZE: usize = 64;
+        const CHUNK_SIZE: usize = 16;
+        let payload = b"interrupt";
+        let mut call_count = 0usize;
+        let result = Vsock::receive_loop(MAX_DATA_SIZE, CHUNK_SIZE, |buf| {
+            call_count += 1;
+            if call_count == 1 {
+                Err(Errno::EINTR)
+            } else {
+                let n = payload.len().min(buf.len());
+                buf[..n].copy_from_slice(&payload[..n]);
+                Ok(n)
+            }
+        });
+        let result = result.unwrap();
+        assert_eq!(call_count, 2);
+        assert_eq!(result, payload);
+    }
+
+    #[test]
+    #[should_panic(expected = "ECONNRESET")]
+    fn receive_loop_returns_error_when_transport_fails_fail() {
+        const MAX_DATA_SIZE: usize = 64;
+        const CHUNK_SIZE: usize = 8;
+        Vsock::receive_loop(MAX_DATA_SIZE, CHUNK_SIZE, |_| Err(Errno::ECONNRESET)).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Recv buffer full")]
+    fn receive_loop_returns_buffer_full_error_when_capacity_exhausted_fail() {
+        // Transport always returns a full chunk, so position will reach max_data_size.
+        let max_data_size = 8;
+        let chunk_size = 4;
+        Vsock::receive_loop(max_data_size, chunk_size, |buf| Ok(buf.len())).unwrap();
+    }
+
+    #[test]
+    fn receive_loop_last_chunk_is_clamped_to_remaining_capacity_ok() {
+        // max_data_size = 10, chunk_size = 4 → chunks of 4, 4, 2.
+        // Verify the final slice handed to transport has length 2, not 4.
+        let max_data_size = 10usize;
+        let chunk_size = 4usize;
+        let mut chunk_lengths: Vec<usize> = Vec::new();
+        // Transport fills each chunk fully (simulating a full read) except the last
+        // where the slice is already smaller than chunk_size, so the loop exits.
+        let result = Vsock::receive_loop(max_data_size, chunk_size, |buf| {
+            chunk_lengths.push(buf.len());
+            Ok(buf.len())
+        });
+        // After two full chunks (8 bytes), the third window is 2 bytes — shorter
+        // than chunk_size — so the loop detects buffer full and returns an error
+        // (position 8 >= max_data_size 10 is false after chunk 2; the third call
+        // fills 2 bytes returning 2 < 4, so the short-read branch fires first).
+        // What matters for this test: the third chunk is 2 bytes, not 4.
+        assert!(chunk_lengths.len() >= 3);
+        assert_eq!(chunk_lengths[2], 2);
+        // Result is Ok because the short-read branch fires before buffer-full.
+        result.unwrap();
     }
 }

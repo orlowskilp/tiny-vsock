@@ -1,4 +1,5 @@
-VERSION = $(shell cat ./Cargo.toml | grep ^version | awk -F ' = ' '{ print $$2 }' | tr -d '"')
+PKG_NAME = $(shell grep -A 1 "\[package\]" Cargo.toml | tail -1 | awk -F ' = ' '{ print $$2 }' | tr -d '"')
+VERSION = $(shell cargo pkgid $(PKG_NAME) | awk -F '@' '{ print $$2 }')
 
 # Build the binary
 .PHONY: build
