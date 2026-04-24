@@ -38,9 +38,8 @@ USER ${USERNAME}
 WORKDIR ${HOME_DIR}
 
 # Install Rust and some useful tools
-ENV PATH=$PATH:${HOME_DIR}/.cargo/bin \
-    CARGO_BIN=${HOME_DIR}/.cargo/bin \
-    CARGO_TERM_COLOR=always
+ENV PATH=$PATH:${HOME_DIR}/.cargo/bin:${HOME_DIR}/.local/bin \
+    CARGO_BIN=${HOME_DIR}/.cargo/bin
 RUN echo eval '"$(direnv hook bash)"' >> ${HOME_DIR}/.bashrc
 RUN curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- -y && \
     cargo install \
@@ -52,3 +51,6 @@ RUN curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- -y && \
 RUN curl -Os https://cli.codecov.io/latest/linux/codecov && \
     chmod +x codecov && \
     mv codecov ${CARGO_BIN}
+RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes && \
+    starship init bash >> ~/.bashrc
+RUN curl -fsSL https://claude.ai/install.sh | bash

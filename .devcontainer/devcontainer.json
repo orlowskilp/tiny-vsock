@@ -15,7 +15,9 @@
   "workspaceMount": "source=${localWorkspaceFolder},target=${containerWorkspaceFolder},type=bind,consistency=cached",
   "remoteEnv": {
     "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
-    "CONTAINER_WORKSPACE_FOLDER": "${containerWorkspaceFolder}",
+    "CONTAINER_WORKSPACE_FOLDER": "${containerWorkspaceFolder}"
+  },
+  "containerEnv": {
     "CC_X86_64_UNKNOWN_LINUX_GNU": "gcc",
     "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER": "gcc",
     "CC_X86_64_UNKNOWN_LINUX_MUSL": "musl-gcc",
@@ -23,7 +25,9 @@
     "CC_AARCH64_UNKNOWN_LINUX_GNU": "aarch64-linux-gnu-gcc",
     "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER": "aarch64-linux-gnu-gcc",
     "CC_AARCH64_UNKNOWN_LINUX_MUSL": "aarch64-linux-musl-gcc",
-    "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER": "aarch64-linux-musl-gcc"
+    "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER": "aarch64-linux-musl-gcc",
+    "CARGO_TERM_COLOR": "always",
+    "CARGO_INCREMENTAL": "1"
   },
   "customizations": {
     "vscode": {
@@ -35,19 +39,19 @@
         "vadimcn.vscode-lldb",
         "tamasfe.even-better-toml",
         "DavidAnson.vscode-markdownlint",
-        "GitHub.copilot",
-        "GitHub.copilot-chat",
         "GitHub.vscode-github-actions",
         "GitHub.vscode-pull-request-github",
         "ms-azuretools.vscode-docker",
         "ms-vscode.makefile-tools",
         "docker.docker",
         "Codecov.codecov",
-        "AmazonWebServices.aws-toolkit-vscode"
+        "AmazonWebServices.aws-toolkit-vscode",
+        "anthropic.claude-code"
       ]
     }
   },
   "runArgs": [
+    "--name=tiny-vsock-dev-env",
     "--platform=linux/amd64",
     "--cap-add=SYS_PTRACE",
     "--security-opt",
@@ -57,7 +61,8 @@
     3000
   ],
   "mounts": [
-    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
+    "source=/home/orlowskilp/.claude,target=/home/vscode/.claude,type=bind"
   ],
   "remoteUser": "vscode",
   "postCreateCommand": "${containerWorkspaceFolder}/.devcontainer/commands/post-create.sh",
