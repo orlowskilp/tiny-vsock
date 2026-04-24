@@ -24,16 +24,20 @@ test:
 
 # Run unit and integration tests and measure coverage.
 # Additional flags can be passed with LLVM_COV_ARGS
-.PHONY: test-coverage
-test-coverage:
-	@cargo llvm-cov --all-features --codecov --output-path target/codecov.json
-	@codecov upload-process \
-		--sha $(shell git rev-parse @) \
-		--token $(CODECOV_TOKEN) \
-		--slug ${GH_SLUG} \
-		--git-service github \
-		--file target/codecov.json \
-		--report-type coverage
+.PHONY: unit-test-coverage
+unit-test-coverage:
+	@cargo llvm-cov --lib --all-features --codecov --output-path target/unit-tests-codecov.json
+# 	@codecov upload-process \
+# 		--sha $(shell git rev-parse @) \
+# 		--token $(CODECOV_TOKEN) \
+# 		--slug ${GH_SLUG} \
+# 		--git-service github \
+# 		--file target/codecov.json \
+# 		--report-type coverage
+
+.PHONY: integration-test-coverage
+integration-test-coverage:
+	@cargo llvm-cov --test '*' --codecov --output-path target/integration-tests-codecov.json
 
 # Clean up
 .PHONY: clean
@@ -50,7 +54,7 @@ version:
 # Run only unit tests (shorthand for developers)
 .PHONY: unit-test
 unit-test:
-	cargo test --all-targets
+	cargo test --lib --all-features
 
 # Run only integration tests (shorthand for developers)
 .PHONY: integration-test

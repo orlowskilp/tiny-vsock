@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build and deploy docs
+    name: Build docs
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -54,7 +54,7 @@ jobs:
           path: target/doc
 
   deploy:
-    name: Build and deploy docs
+    name: Deploy docs
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

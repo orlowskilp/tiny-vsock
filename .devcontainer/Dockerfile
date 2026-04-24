@@ -24,6 +24,7 @@ RUN pacman -Suy --disable-sandbox --noconfirm \
     direnv \
     unzip \
     xxd \
+    bash-completion \
     docker \
     docker-compose \
     sudo && \
