@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=colors.sh
+source "$(dirname "${BASH_SOURCE[0]}")/colors.sh"
+
 DEFAULT_DEV_CONTAINER_NAME="tiny-vsock-dev-env"
 DEFAULT_WORKSPACE_DIR="/workspace"
 
@@ -21,15 +24,15 @@ resolve_dev_container_name() {
 
 run_in_devcontainer() {
   if ! command -v docker >/dev/null 2>&1; then
-    echo "[hooks] docker is required on host to run checks in the dev container." >&2
+    echo "${RED}[hooks] docker is required on host to run checks in the dev container.${RESET}" >&2
     return 1
   fi
 
   local container_name
   container_name="$(resolve_dev_container_name)"
   if [[ -z "$container_name" ]]; then
-    echo "[hooks] could not find a running dev container for this repository." >&2
-    echo "[hooks] start the dev container first, or set DEV_CONTAINER_NAME explicitly." >&2
+    echo "${RED}[hooks] could not find a running dev container for this repository.${RESET}" >&2
+    echo "${YELLOW}[hooks] start the dev container first, or set DEV_CONTAINER_NAME explicitly.${RESET}" >&2
     return 1
   fi
 

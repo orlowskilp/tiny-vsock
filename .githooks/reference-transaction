@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=lib/colors.sh
+source "$(dirname "$0")/lib/colors.sh"
+
 # Git calls this hook with one argument indicating transaction state:
 #   prepared | committed | aborted
 # We only enforce checks in the prepared phase so we can block invalid refs.
@@ -15,9 +18,10 @@ while IFS=' ' read -r old_sha new_sha ref_name; do
   [[ -z "${ref_name:-}" ]] && continue
 
   if [[ "$ref_name" == refs/tags/* ]]; then
+    echo "${CYAN}[pre-tag]${RESET} triggering..."
     export GITHUB_REF="$ref_name"
     if ! .github/utils/check-version.sh; then
-      echo "[pre-tag-version-check] tag creation blocked for $ref_name due to version mismatch." >&2
+      echo "${RED}[pre-tag-version-check]${RESET} ${RED}tag creation blocked for $ref_name due to version mismatch.${RESET}" >&2
       exit 1
     fi
   fi

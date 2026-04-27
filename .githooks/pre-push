@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=lib/colors.sh
+source "$(dirname "$0")/lib/colors.sh"
+
+echo "${CYAN}[pre-push]${RESET} triggering..."
+
 remote_name="${1:-}"
 
-zero_sha="0000000000000000000000000000000000000000"
+zero_sha="$(printf '%040d' 0)"
 declare -a commits_to_check=()
 
 while read -r local_ref local_sha remote_ref remote_sha; do
@@ -44,13 +49,13 @@ for commit in "${unique_commits[@]}"; do
 done
 
 if [[ ${#invalid_commits[@]} -gt 0 ]]; then
-  echo "[pre-push] push rejected: all pushed commits must be signed with valid signatures." >&2
-  echo "[pre-push] failing commits:" >&2
+  echo "${CYAN}[pre-push]${RESET} ${RED}push rejected: all pushed commits must be signed with valid signatures.${RESET}" >&2
+  echo "${CYAN}[pre-push]${RESET} ${RED}failing commits:${RESET}" >&2
 
   for commit in "${invalid_commits[@]}"; do
-    git show -s --format='  - %h %s' "${commit}" >&2
+    git show -s --format=" - ${GREEN}%h${RESET}: ${YELLOW}%s${RESET}" "${commit}" >&2
   done
 
-  echo "[pre-push] sign the commits and retry push." >&2
+  echo "${CYAN}[pre-push]${RESET} ${YELLOW}sign the commits and retry push.${RESET}" >&2
   exit 1
 fi
