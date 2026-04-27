@@ -149,6 +149,19 @@ conn.read_to_end(&mut buf)?;
 > chunking and enforce a hard cap on incoming data size, which protects against
 > allocation-based DoS from a misbehaving peer.
 
+## Containerized Environment
+
+The repository is designed to be used inside a Docker devcontainer. For security reasons, the container
+holds no credentials to push to the remote — all remote git operations must be run from the host.
+
+The `.githooks/` directory contains pre-commit and pre-push hooks that run lint and test checks by
+`docker exec`-ing into the running devcontainer. These hooks are intended for host-side git use only.
+To register them, run the following from the repository root on the host machine:
+
+```sh
+git config core.hooksPath .githooks
+```
+
 ---
 
 Copyright (c) Lukasz Orlowski <lukasz@orlowski.io>. All rights granted under MIT license.
