@@ -1,0 +1,7 @@
+max_width = 120
+use_small_heuristics = "Max"
+reorder_imports = true
+reorder_modules = true
+fn_params_layout = "Compressed"
+hard_tabs = false
+tab_spaces = 4

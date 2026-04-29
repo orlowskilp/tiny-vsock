@@ -15,18 +15,14 @@ fn main() -> Result<()> {
     use std::io::{BufReader, Read, Write};
     use tiny_vsock::Vsock;
 
-    let role = std::env::args()
-        .nth(1)
-        .ok_or_else(|| anyhow!("usage: std_io_echo server | client"))?;
+    let role = std::env::args().nth(1).ok_or_else(|| anyhow!("usage: std_io_echo server | client"))?;
 
     match role.as_str() {
         "server" => {
             let listener = Vsock::bind(PORT)
                 .inspect(|_| tracing::info!("Bound to port {PORT}"))
                 .inspect_err(|err| tracing::error!("Socket bind failed: {err:#?}"))?;
-            listener
-                .listen()
-                .inspect_err(|err| tracing::error!("Socket listen failed: {err:#?}"))?;
+            listener.listen().inspect_err(|err| tracing::error!("Socket listen failed: {err:#?}"))?;
 
             let mut conn = listener
                 .accept()
@@ -48,13 +44,10 @@ fn main() -> Result<()> {
                 .inspect(|_| tracing::info!("Sent message"))
                 .inspect_err(|err| tracing::error!("Write failed: {err:#?}"))?;
             // flush shuts down the write side, signalling EOF to the server's read_to_string.
-            conn.flush()
-                .inspect_err(|err| tracing::error!("Flush failed: {err:#?}"))?;
+            conn.flush().inspect_err(|err| tracing::error!("Flush failed: {err:#?}"))?;
         }
         other => {
-            return Err(anyhow!(
-                "unknown role `{other}`; expected `server` or `client`"
-            ));
+            return Err(anyhow!("unknown role `{other}`; expected `server` or `client`"));
         }
     }
 

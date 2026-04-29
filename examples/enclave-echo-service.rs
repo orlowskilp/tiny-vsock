@@ -38,10 +38,5 @@ fn main() -> Result<()> {
     parent_socket
         .send(&data_buffer, CHUNK_SIZE)
         .inspect_err(|err| tracing::error!("Socket send failed: {err:#?}"))
-        .map(|_| {
-            tracing::info!(
-                "Sent {} bytes of data. Closing connection",
-                data_buffer.len()
-            )
-        })
+        .map(|_| tracing::info!("Sent {} bytes of data. Closing connection", data_buffer.len()))
 }

@@ -27,13 +27,6 @@ test:
 .PHONY: unit-test-coverage
 unit-test-coverage:
 	@cargo llvm-cov --lib --all-features --codecov --output-path target/unit-tests-codecov.json
-# 	@codecov upload-process \
-# 		--sha $(shell git rev-parse @) \
-# 		--token $(CODECOV_TOKEN) \
-# 		--slug ${GH_SLUG} \
-# 		--git-service github \
-# 		--file target/codecov.json \
-# 		--report-type coverage
 
 .PHONY: integration-test-coverage
 integration-test-coverage:

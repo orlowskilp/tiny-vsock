@@ -79,13 +79,7 @@ impl Vsock {
 
     /// Shorthand method to create a new Vsock socket. Not meant for public use.
     fn socket() -> Result<OwnedFd> {
-        socket::socket(
-            AddressFamily::Vsock,
-            SockType::Stream,
-            SockFlag::empty(),
-            None,
-        )
-        .map_err(|err| {
+        socket::socket(AddressFamily::Vsock, SockType::Stream, SockFlag::empty(), None).map_err(|err| {
             tracing::error!("Vsock: Create socket failed: {err:#?}");
             anyhow!(err)
         })
@@ -126,10 +120,7 @@ impl Vsock {
             match socket::connect(vsock.as_raw_fd(), &VsockAddr::new(cid, port)) {
                 Ok(_) => return Ok(vsock),
                 Err(err) => {
-                    tracing::warn!(
-                        "Vsock: Connect attempt {} failed: {err:#?}, retrying...",
-                        i + 1
-                    )
+                    tracing::warn!("Vsock: Connect attempt {} failed: {err:#?}, retrying...", i + 1)
                 }
             }
             // Exponentially backoff before retrying to connect to the socket
@@ -198,9 +189,7 @@ impl Vsock {
     ///
     /// Empty result indicating success or error if the operation fails.
     pub fn send(&self, data: &[u8], chunk_size: usize) -> Result<()> {
-        Self::send_loop(data, chunk_size, |chunk| {
-            socket::send(self.as_raw_fd(), chunk, MsgFlags::empty())
-        })
+        Self::send_loop(data, chunk_size, |chunk| socket::send(self.as_raw_fd(), chunk, MsgFlags::empty()))
     }
 
     /// Core send loop parameterized over the underlying transport operation.
@@ -216,9 +205,7 @@ impl Vsock {
     /// * `transport` - Called repeatedly with successive slices of `data`; returns the number
     ///   of bytes consumed, `0` for a remote close, or a [`NixError`] on failure.
     fn send_loop(
-        data: &[u8],
-        chunk_size: usize,
-        mut transport: impl FnMut(&[u8]) -> StdResult<usize, NixError>,
+        data: &[u8], chunk_size: usize, mut transport: impl FnMut(&[u8]) -> StdResult<usize, NixError>,
     ) -> Result<()> {
         let mut position = 0;
         loop {
@@ -271,14 +258,10 @@ impl Vsock {
     /// operation fails.
     pub fn receive(&self, max_data_size: usize, chunk_size: usize) -> Result<Vec<u8>> {
         if max_data_size < chunk_size {
-            tracing::error!(
-                "Vsock: Buffer length less than chunk size: {max_data_size} < {chunk_size}"
-            );
+            tracing::error!("Vsock: Buffer length less than chunk size: {max_data_size} < {chunk_size}");
             return Err(anyhow!("Vsock: Buffer too small"));
         }
-        Self::receive_loop(max_data_size, chunk_size, |buf| {
-            socket::recv(self.as_raw_fd(), buf, MsgFlags::empty())
-        })
+        Self::receive_loop(max_data_size, chunk_size, |buf| socket::recv(self.as_raw_fd(), buf, MsgFlags::empty()))
     }
 
     /// Core receive loop parameterized over the underlying transport operation.
@@ -295,9 +278,7 @@ impl Vsock {
     /// * `transport` - Called repeatedly with a mutable slice of the buffer; returns the number
     ///   of bytes written, `0` for a remote close, or a [`NixError`] on failure.
     fn receive_loop(
-        max_data_size: usize,
-        chunk_size: usize,
-        mut transport: impl FnMut(&mut [u8]) -> StdResult<usize, NixError>,
+        max_data_size: usize, chunk_size: usize, mut transport: impl FnMut(&mut [u8]) -> StdResult<usize, NixError>,
     ) -> Result<Vec<u8>> {
         let mut buffer = vec![0u8; max_data_size];
         let mut position = 0;
@@ -306,9 +287,7 @@ impl Vsock {
             let right = left + chunk_size.min(max_data_size - left);
             let recv_data_len = match transport(&mut buffer[left..right]) {
                 Ok(0) => {
-                    tracing::warn!(
-                        "Vsock: Remote closed connection, total bytes received: {position}"
-                    );
+                    tracing::warn!("Vsock: Remote closed connection, total bytes received: {position}");
                     break Ok(buffer[..position].to_vec());
                 }
                 Ok(data_len) => {
@@ -446,9 +425,7 @@ mod tests {
         const MAX_DATA_SIZE: usize = 0;
         const MIN_NONZERO_CHUNK_SIZE: usize = 1;
         let vsock = make_pipe_vsock();
-        vsock
-            .receive(MAX_DATA_SIZE, MIN_NONZERO_CHUNK_SIZE)
-            .unwrap();
+        vsock.receive(MAX_DATA_SIZE, MIN_NONZERO_CHUNK_SIZE).unwrap();
     }
 
     #[test]
@@ -511,11 +488,7 @@ mod tests {
         // Return EINTR on the first call, succeed on the second.
         Vsock::send_loop(data, CHUNK_SIZE, |chunk| {
             call_count += 1;
-            if call_count == 1 {
-                Err(Errno::EINTR)
-            } else {
-                Ok(chunk.len())
-            }
+            if call_count == 1 { Err(Errno::EINTR) } else { Ok(chunk.len()) }
         })
         .unwrap();
         assert_eq!(call_count, 2);
