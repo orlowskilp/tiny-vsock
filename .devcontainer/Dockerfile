@@ -1,4 +1,8 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Lukasz P. Orlowski <lukasz@orlowski.io>. All rights granted under MIT license.
+
 ARG VERSION=latest
+ARG CC_VERSION=stable
 
 # Version is provided in devcontainer.json
 FROM archlinux:${VERSION}
@@ -54,4 +58,4 @@ RUN curl -Os https://cli.codecov.io/latest/linux/codecov && \
     mv codecov ${CARGO_BIN}
 RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes && \
     starship init bash >> ~/.bashrc
-RUN curl -fsSL https://claude.ai/install.sh | bash
+RUN curl -fsSL https://claude.ai/install.sh | bash -s -- ${CC_VERSION}

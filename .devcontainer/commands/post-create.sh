@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Lukasz P. Orlowski <lukasz@orlowski.io>. All rights granted under MIT license.
+
 # Add the current directory to the list of safe directories for Git
 # to avoid warnings when using Git in the container.
 git config --global --add safe.directory $(pwd)

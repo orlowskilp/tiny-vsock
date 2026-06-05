@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Lukasz P. Orlowski <lukasz@orlowski.io>. All rights granted under MIT license.
+
 PKG_NAME = $(shell grep -A 1 "\[package\]" Cargo.toml | tail -1 | awk -F ' = ' '{ print $$2 }' | tr -d '"')
 VERSION = $(shell cargo pkgid $(PKG_NAME) | awk -F '@' '{ print $$2 }')
 

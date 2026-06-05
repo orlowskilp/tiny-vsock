@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 use serial_test::serial;
 #[cfg(feature = "std-io")]
 use std::io::{Read as _, Write as _};

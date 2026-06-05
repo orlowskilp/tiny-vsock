@@ -1,4 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash
+
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Lukasz P. Orlowski <lukasz@orlowski.io>. All rights granted under MIT license.
 
 RESET=$'\033[0m'
 BOLD=$'\033[1m'

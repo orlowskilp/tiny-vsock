@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 use anyhow::Result;
 use lib::Vsock;
 use tiny_vsock as lib;

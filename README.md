@@ -1,4 +1,4 @@
-# tiny-vsock
+# Tiny Vsock
 
 [![doc](https://img.shields.io/badge/doc_version-v0.1.2-blue)](https://orlowskilp.github.io/tiny-vsock/tiny_vsock/index.html)
 [![codecov](https://codecov.io/github/orlowskilp/tiny-vsock/graph/badge.svg?token=2R7TFgUos4)](https://codecov.io/github/orlowskilp/tiny-vsock)
@@ -6,7 +6,7 @@
 
 A lean, dependency-light Rust library for `AF_VSOCK` communication — the socket family
 designed for secure, high-performance communication between a host and its virtual machines
-or confidential computing enclaves.
+or confidential computing enclaves (designed with the latter in mind).
 
 If you're building for **AWS Nitro Enclaves**, **KVM guests**, or any other hypervisor
 environment where you need a reliable channel between the host and a VM, `tiny-vsock` gets
@@ -16,11 +16,14 @@ you there with minimal ceremony.
 
 ## What is vsock
 
-`AF_VSOCK` is a reliable, bidirectional, connection-oriented socket family for communication between a host and its virtual machines. Unlike standard `AF_INET` sockets, vsocks operate at the hypervisor level and do not require IP addresses or network interfaces.
+`AF_VSOCK` is a reliable, bidirectional, connection-oriented socket family for communication between a host and its virtual machines.
+Unlike standard `AF_INET` sockets, vsocks operate at the hypervisor level and do not require IP addresses or network interfaces.
 
-In AWS Nitro Enclaves, the typical topology is a hub-and-spoke model: one application on the EC2 parent instance communicates with up to 4 Nitro Enclaves, each over its own vsock pair.
+In AWS Nitro Enclaves, the typical topology is a hub-and-spoke model: one application on the EC2 parent instance communicates with up
+to 4 Nitro Enclaves, each over its own vsock pair.
 
-Nitro Enclaves are completely isolated from the parent. They have no network connectivity, use ephemeral storage, and run in a separate address space. The vsock is the only communication path between parent and enclave.
+Nitro Enclaves are completely isolated from the parent. They have no network connectivity, use ephemeral storage, and run in a separate
+address space. The vsock is the only communication path between parent and enclave.
 
 ```mermaid
 flowchart LR
@@ -79,7 +82,7 @@ sequenceDiagram
 
 ---
 
-## Why tiny-vsock?
+## Why `tiny-vsock`?
 
 Most vsock wrappers drag in heavy async runtimes or sprawling socket abstractions you'll
 never use. `tiny-vsock` does one thing: gives you a clean, safe Rust API over the raw
@@ -213,6 +216,20 @@ conn.read_to_end(&mut buf)?;
 > **Prefer `send`/`receive` for performance-sensitive paths.** They support explicit
 > chunking and enforce a hard cap on incoming data size, which protects against
 > allocation-based DoS from a misbehaving peer.
+
+## Test coverage
+
+The coverage measured with GitHub runners is limited to what can be executed without external runners. I encourage you to run coverage
+measurement locally, with:
+
+```shell
+make llvm-cov
+```
+
+| Filename   | Regs | ❌ Regs | Cover  | Fn | ❌ Fn | Executed | 〰️  | ❌ 〰️ | Cover  | 🕊️ | ❌ 🕊️ |
+| ---------- | ---- | ------- | ------ | -- | ----- | -------- | --- | ----- | ------ | - | ---- |
+| src/lib.rs | 474  | 26      | 94.51% | 52 | 1     | 98.08%   | 284 | 22    | 92.25% | 0 | 0    |
+| TOTAL      | 474  | 26      | 94.51% | 52 | 1     | 98.08%   | 284 | 22    | 92.25% | 0 | 0    |
 
 ---
 

@@ -1,4 +1,7 @@
-name: Publish documentation
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Lukasz P. Orlowski <lukasz@orlowski.io>. All rights granted under MIT license.
+
+name: Publish docs
 
 on:
   push:

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 use anyhow::{Result, anyhow};
 
 // Port for the echo service.

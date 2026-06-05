@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 //! Tiny vsock is a Rust library that provides an abstraction over vsock (`AF_VSOCK`) sockets
 //! for communication between hosts and virtual machines or enclaves. It offers a simple API
 //! for creating, connecting, binding, listening, accepting, sending, and receiving data through
