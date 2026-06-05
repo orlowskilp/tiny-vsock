@@ -2,4 +2,5 @@
 .envrc
 .aws
 **/*.md
+Cargo.lock
 !README.md

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 // Port for the echo service.
 const PORT: u32 = 5000;

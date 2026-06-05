@@ -1,6 +1,7 @@
 # Tiny Vsock
 
-[![doc](https://img.shields.io/badge/doc_version-v0.1.2-blue)](https://orlowskilp.github.io/tiny-vsock/tiny_vsock/index.html)
+[![Crates.io Version](https://img.shields.io/crates/v/tiny-vsock)](https://crates.io/crates/tiny-vsock)
+[![doc](https://img.shields.io/badge/doc_version-v0.1.3-blue)](https://orlowskilp.github.io/tiny-vsock/tiny_vsock/)
 [![codecov](https://codecov.io/github/orlowskilp/tiny-vsock/graph/badge.svg?token=2R7TFgUos4)](https://codecov.io/github/orlowskilp/tiny-vsock)
 [![MIT License](https://img.shields.io/badge/license-MIT-green)](/LICENSE)
 
@@ -46,37 +47,40 @@ flowchart LR
 
 ## How vsock works
 
-The parent binds and listens on a port, the enclave connects, and data flows bidirectionally via chunked
+One of common patterns is a service that runs in an enclave and parent works like a client.
+The enclave binds and listens on a port, the parent connects, and data flows bidirectionally via chunked
 `send`/`receive` calls. Because the vsock operates over a `SOCK_STREAM` socket, `send` is guaranteed to succeed
 if the call returns, though `receive` may return `EAGAIN` on a non-blocking socket.
 
 ```mermaid
 sequenceDiagram
-    participant P as Parent
-    participant E as Enclave
+    participant P as Parent<br/>Context ID = 3
+    participant E as Enclave<br/>Context ID = cid
 
-    P->>P: Vsock::bind(port)
-    Note over P: binds on port, accepts any CID
-    P->>P: listener.listen()
+    E->>+E: Vsock::bind(port)
+    Note over E: returns enc_sock
+    E->>E: enc_sock.listen()
 
-    E->>P: Vsock::connect(3, port)
-    Note over E: CID 3 = parent address, retries w/ backoff
-    P->>E: listener.accept()
-    Note over P: returns connected socket
+    P->>E: Vsock::connect(cid, port)
+    Note over E: returns par_sock
+    E->>-P: listener.accept()
+    Note over P: returns enc_sock
 
-    P->>E: send(request, chunk_size)
-    E->>P: receive(max_size, chunk_size)
+    P->>+E: send(request, chunk_size)
+    E->>-E: receive(max_size, chunk_size)
+    Note over E,P: Parent to Enclave communication
 
-    E->>P: send(response, chunk_size)
-    P->>E: receive(max_size, chunk_size)
+    E->>+P: send(response, chunk_size)
+    P->>-P: receive(max_size, chunk_size)
+    Note over E,P: Enclave to Parent communication
 
-    Note over P,E: sockets drop on scope exit → graceful close
+    Note over P,E: Sockets drop on scope exit → graceful close
 ```
 
 **Key points:**
 
-- The parent binds to a specific port and listens on any CID (`u32::MAX`).
-- The enclave connects to CID `3` (`PARENT_NE_CID_ADDR`), which the Nitro hypervisor maps to the parent.
+- The enclave service binds to a specific port and listens on any CID `3`, which the Nitro hypervisor maps to the parent.
+- The parent connects to any CID `u32::MAX` (`ANY_CID_ADDR`).
 - The `Vsock::connect` call retries with exponential backoff because enclaves may take time to start.
 - `receive(max_size, chunk_size)` enforces a hard cap on incoming data to prevent allocation-based DoS.
 
@@ -223,7 +227,7 @@ The coverage measured with GitHub runners is limited to what can be executed wit
 measurement locally, with:
 
 ```shell
-make llvm-cov
+cargo llvm-cov --all-features
 ```
 
 | Filename   | Regs | ❌ Regs | Cover  | Fn | ❌ Fn | Executed | 〰️  | ❌ 〰️ | Cover  | 🕊️ | ❌ 🕊️ |

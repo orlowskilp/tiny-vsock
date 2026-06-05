@@ -22,12 +22,12 @@
 //!   — demonstrates `std::io::Read` /
 //!   `std::io::Write` via `BufReader` and `flush`; requires `--features std-io`
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 #[cfg(feature = "std-io")]
 use nix::sys::socket::Shutdown;
 use nix::{
-    Error as NixError,
     sys::socket::{self, AddressFamily, Backlog, MsgFlags, SockFlag, SockType, VsockAddr},
+    Error as NixError,
 };
 #[cfg(feature = "std-io")]
 use std::io::{Error as IoError, Read, Result as IoResult, Write};
@@ -490,7 +490,11 @@ mod tests {
         // Return EINTR on the first call, succeed on the second.
         Vsock::send_loop(data, CHUNK_SIZE, |chunk| {
             call_count += 1;
-            if call_count == 1 { Err(Errno::EINTR) } else { Ok(chunk.len()) }
+            if call_count == 1 {
+                Err(Errno::EINTR)
+            } else {
+                Ok(chunk.len())
+            }
         })
         .unwrap();
         assert_eq!(call_count, 2);

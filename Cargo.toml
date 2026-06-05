@@ -1,23 +1,29 @@
 [package]
 name = "tiny-vsock"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Lukasz Orlowski <lukasz@orlowski.io>"]
 categories = ["virtualization", "security", "network-programming"]
 documentation = "https://orlowskilp.github.io/tiny-vsock/tiny_vsock"
-edition = "2024"
+edition = "2021"
 exclude = [
   ".gitignore",
   ".gitattributes",
+  ".githooks",
   ".git",
   ".github",
   ".devcontainer",
   "codecov.yml",
+  "Cargo.toml.orig",
+  "Cargo.lock",
+  "dprint.json",
+  ".vscode",
 ]
 homepage = "https://github.com/orlowskilp/tiny-vsock"
 keywords = ["vsock", "virtualization", "networking", "enclave", "security"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/orlowskilp/tiny-vsock"
+rust-version = "1.96.0"
 description = "Tiny vsock library for secure communication with enclaves"
 
 [[example]]
@@ -28,19 +34,20 @@ path = "examples/enclave-echo-service.rs"
 name = "parent-echo-client"
 path = "examples/parent-echo-client.rs"
 
+[[example]]
+name = "std_io_echo"
+path = "examples/std_io_echo.rs"
+required-features = ["std-io"]
+
 [features]
 std-io = []
+socket-tests = []
 
 [dependencies]
 anyhow = "1.0.101"
 nix = { version = "0.31.1", features = ["socket"] }
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 
 [dev-dependencies]
-serial_test = "3.3.1"
-
-[[example]]
-name = "std_io_echo"
-path = "examples/std_io_echo.rs"
-required-features = ["std-io"]
+serial_test = { version = "3.3.1" }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
