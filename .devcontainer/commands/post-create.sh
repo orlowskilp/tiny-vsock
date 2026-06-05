@@ -14,3 +14,6 @@ echo -e "\nif [ ! -f ${CONTAINER_WORKSPACE_FOLDER}/.envrc ]; then touch ${CONTAI
 
 # Allow direnv to load environment variables every time a new shell is started
 echo -e "\ndirenv allow ${CONTAINER_WORKSPACE_FOLDER}" >> ~/.bashrc
+
+# Add an alias for the `claude` command with specific options
+echo -e "\nalias claude='claude --model qwen3.6 --channels plugin:telegram@claude-plugins-official'" >> ~/.bashrc

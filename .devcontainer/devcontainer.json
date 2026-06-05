@@ -27,7 +27,8 @@
     "CC_AARCH64_UNKNOWN_LINUX_MUSL": "aarch64-linux-musl-gcc",
     "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER": "aarch64-linux-musl-gcc",
     "CARGO_TERM_COLOR": "always",
-    "CARGO_INCREMENTAL": "1"
+    "CARGO_INCREMENTAL": "1",
+    "DISABLE_AUTOUPDATER": "1"
   },
   "customizations": {
     "vscode": {
@@ -62,7 +63,7 @@
   ],
   "mounts": [
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
-    "source=/home/orlowskilp/.claude,target=/home/vscode/.claude,type=bind"
+    "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind"
   ],
   "remoteUser": "vscode",
   "postCreateCommand": "${containerWorkspaceFolder}/.devcontainer/commands/post-create.sh",
