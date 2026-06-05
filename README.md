@@ -14,6 +14,71 @@ you there with minimal ceremony.
 
 ---
 
+## What is vsock
+
+`AF_VSOCK` is a reliable, bidirectional, connection-oriented socket family for communication between a host and its virtual machines. Unlike standard `AF_INET` sockets, vsocks operate at the hypervisor level and do not require IP addresses or network interfaces.
+
+In AWS Nitro Enclaves, the typical topology is a hub-and-spoke model: one application on the EC2 parent instance communicates with up to 4 Nitro Enclaves, each over its own vsock pair.
+
+Nitro Enclaves are completely isolated from the parent. They have no network connectivity, use ephemeral storage, and run in a separate address space. The vsock is the only communication path between parent and enclave.
+
+```mermaid
+flowchart LR
+    subgraph I["EC2 instance"]
+      direction LR
+      Ia[Instance App]
+      V[Vsock]
+      E1[Enclave 1]
+      E2[Enclave 2]
+      E3[Enclave 3]
+      E4[Enclave 4]
+    end
+
+    Ia <--> V
+    V <--> E1
+    V <--> E2
+    V <--> E3
+    V <--> E4
+```
+
+## How vsock works
+
+The parent binds and listens on a port, the enclave connects, and data flows bidirectionally via chunked
+`send`/`receive` calls. Because the vsock operates over a `SOCK_STREAM` socket, `send` is guaranteed to succeed
+if the call returns, though `receive` may return `EAGAIN` on a non-blocking socket.
+
+```mermaid
+sequenceDiagram
+    participant P as Parent
+    participant E as Enclave
+
+    P->>P: Vsock::bind(port)
+    Note over P: binds on port, accepts any CID
+    P->>P: listener.listen()
+
+    E->>P: Vsock::connect(3, port)
+    Note over E: CID 3 = parent address, retries w/ backoff
+    P->>E: listener.accept()
+    Note over P: returns connected socket
+
+    P->>E: send(request, chunk_size)
+    E->>P: receive(max_size, chunk_size)
+
+    E->>P: send(response, chunk_size)
+    P->>E: receive(max_size, chunk_size)
+
+    Note over P,E: sockets drop on scope exit → graceful close
+```
+
+**Key points:**
+
+- The parent binds to a specific port and listens on any CID (`u32::MAX`).
+- The enclave connects to CID `3` (`PARENT_NE_CID_ADDR`), which the Nitro hypervisor maps to the parent.
+- The `Vsock::connect` call retries with exponential backoff because enclaves may take time to start.
+- `receive(max_size, chunk_size)` enforces a hard cap on incoming data to prevent allocation-based DoS.
+
+---
+
 ## Why tiny-vsock?
 
 Most vsock wrappers drag in heavy async runtimes or sprawling socket abstractions you'll
@@ -149,19 +214,6 @@ conn.read_to_end(&mut buf)?;
 > chunking and enforce a hard cap on incoming data size, which protects against
 > allocation-based DoS from a misbehaving peer.
 
-## Containerized Environment
-
-The repository is designed to be used inside a Docker devcontainer. For security reasons, the container
-holds no credentials to push to the remote — all remote git operations must be run from the host.
-
-The `.githooks/` directory contains pre-commit and pre-push hooks that run lint and test checks by
-`docker exec`-ing into the running devcontainer. These hooks are intended for host-side git use only.
-To register them, run the following from the repository root on the host machine:
-
-```sh
-git config core.hooksPath .githooks
-```
-
 ---
 
-Copyright (c) Lukasz Orlowski <lukasz@orlowski.io>. All rights granted under MIT license.
+Copyright (c) 2026 Lukasz Orlowski <lukasz@orlowski.io>. All rights granted under MIT license.
